@@ -7,6 +7,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Health check
 app.get('/', (req, res) => {
   res.send('✅ TrekAI server is running');
 });
@@ -15,7 +16,9 @@ app.get('/', (req, res) => {
 app.post('/api/start', async (req, res) => {
   const { location } = req.body;
 
-  if (!location) return res.status(400).json({ error: 'Location is required.' });
+  if (!location) {
+    return res.status(400).json({ error: 'Location is required.' });
+  }
 
   try {
     const response = await axios.post('https://api.openai.com/v1/chat/completions', {
@@ -40,7 +43,7 @@ app.post('/api/start', async (req, res) => {
 
     res.json({ reply: response.data.choices[0].message.content });
   } catch (error) {
-    console.error('Error in /api/start:', error.response?.data || error.message);
+    console.error('❌ Error in /api/start:', error.response?.data || error.message);
     res.status(500).send('Failed to generate intro response.');
   }
 });
@@ -54,13 +57,13 @@ app.post('/api/finalize', async (req, res) => {
   }
 
   const filterSummary = `
-    Location: ${location}
-    Accommodation: ${filters.accommodation}
-    Difficulty: ${filters.difficulty}
-    Altitude: ${filters.altitude}
-    Technical: ${filters.technical}
-    User Notes: ${comments || "None"}
-  `;
+Location: ${location}
+Accommodation: ${filters.accommodation}
+Difficulty: ${filters.difficulty}
+Altitude: ${filters.altitude}
+Technical: ${filters.technical}
+User Notes: ${comments || "None"}
+`;
 
   try {
     const response = await axios.post('https://api.openai.com/v1/chat/completions', {
@@ -68,11 +71,11 @@ app.post('/api/finalize', async (req, res) => {
       messages: [
         {
           role: "system",
-          content: "You are a professional trekking planner. Generate a personalized, detailed itinerary based on provided filters."
+          content: "You are a professional trekking planner. Generate a personalized, structured, and realistic itinerary based on the user’s trekking preferences."
         },
         {
           role: "user",
-          content: `Here are the trek preferences:\n${filterSummary}\nPlease generate a suitable itinerary.`
+          content: `Here are the trek preferences:\n${filterSummary}\nPlease generate a detailed and practical trekking itinerary based on this.`
         }
       ],
       temperature: 0.7
@@ -85,10 +88,11 @@ app.post('/api/finalize', async (req, res) => {
 
     res.json({ reply: response.data.choices[0].message.content });
   } catch (error) {
-    console.error('Error in /api/finalize:', error.response?.data || error.message);
+    console.error('❌ Error in /api/finalize:', error.response?.data || error.message);
     res.status(500).send('Failed to generate final itinerary.');
   }
 });
 
+// Start server
 const PORT = process.env.PORT || 5050;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
