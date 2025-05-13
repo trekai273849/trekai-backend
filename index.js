@@ -67,18 +67,33 @@ User Notes: ${comments || "None"}
 
   try {
     const response = await axios.post('https://api.openai.com/v1/chat/completions', {
-      model: "gpt-3.5-turbo",
+      model: "gpt-4-0125-preview", // ✅ Use GPT-4-turbo
       messages: [
         {
           role: "system",
-          content: "You are a professional trekking planner. Generate a personalized, structured, and realistic itinerary based on the user’s trekking preferences."
+          content: `
+You are a professional hiking guide and itinerary planner. Create detailed, practical, itineraries based on user preferences. Each day should include:
+
+- Specific trail names or well-known routes
+- Trailhead start and end points
+- Distance (in kilometers and miles)
+- Elevation gain/loss (in meters and feet)
+- Difficulty rating (easy, moderate, difficult)
+- Rifugi or food stops for lunch or drinks
+- Recommended accommodations at the start/end
+- Tips about transport, crowds, or weather
+
+Speak clearly and in a warm, helpful tone—like a local guide who really knows the trails and wants the user to have the best possible trip.
+`.trim()
         },
         {
           role: "user",
-          content: `Here are the trek preferences:\n${filterSummary}\nPlease generate a detailed and practical trekking itinerary based on this.`
+          content: `Here are the trek preferences:\n${filterSummary}\nPlease generate a suitable itinerary.`
+`.trim()
         }
       ],
-      temperature: 0.7
+      temperature: 0.8,
+      max_tokens: 2000
     }, {
       headers: {
         'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
