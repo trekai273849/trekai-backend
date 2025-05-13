@@ -88,7 +88,12 @@ Speak clearly and in a warm, helpful tone—like a local guide who really knows 
         },
         {
           role: "user",
-          content: `Here are the trek preferences:\n${filterSummary}\nPlease generate a suitable itinerary.`
+          content: `
+Here are the trek preferences:
+
+${filterSummary}
+
+Please generate a suitable itinerary.
 `.trim()
         }
       ],
