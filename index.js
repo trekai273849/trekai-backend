@@ -80,8 +80,8 @@ Start with a short paragraph, then outline each day using:
 Day X: Title
 - Start:
 - End:
-- Distance:
-- Elevation:
+- Distance: (in km and miles, e.g. "7 km (4.3 miles)")
+- Elevation: (in meters and feet, e.g. "+500m / -200m (+1640ft / -656ft)")
 - Difficulty:
 - Lunch:
 - Accommodation:
@@ -94,6 +94,9 @@ Provide a detailed, bullet-point list of essential gear, clothing, and safety it
 Offer concise local tips as a bulleted list (use dashes). Include insights about local culture, attractions, safety and food. Ensure each point starts on a new line.
 
 Do not use markdown styling. Keep formatting clean and consistent.
+
+Do not include ### in the body of the response. Only use them as section headers: ### Packing List and ### Local Insights.
+
 `.trim()
         },
         {
