@@ -96,7 +96,6 @@ Offer local tips as a bulleted list (use dashes). Include insights about local c
 
 Do not use markdown styling. Keep formatting clean and consistent.
 `.trim()
-`.trim()
         },
         {
           role: 'user',
