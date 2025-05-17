@@ -1,69 +1,70 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const bodyParser = require('body-parser');
-const { Configuration, OpenAIApi } = require('openai');
+const OpenAI = require('openai');
 
 const app = express();
-const port = process.env.PORT || 3000;
+app.use(express.json());
 
 const allowedOrigins = [
-  'https://feature-test-customize-page--delightful-croquembouche-cafa23.netlify.app',
   'https://smarttrails.pro',
+  'https://your-frontend.netlify.app',
+  'http://localhost:3000'
 ];
 
 app.use(cors({
-  origin: allowedOrigins,
-  methods: ['POST', 'GET'],
-  allowedHeaders: ['Content-Type'],
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
 }));
 
-app.use(bodyParser.json());
-
-const openai = new OpenAIApi(new Configuration({
-  apiKey: process.env.OPENAI_API_KEY,
-}));
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 app.post('/api/finalize', async (req, res) => {
   const { location, filters, comments } = req.body;
 
-  if (!process.env.OPENAI_API_KEY) {
-    return res.status(500).json({ error: 'Missing OpenAI API Key' });
+  if (!location || !filters || !comments) {
+    return res.status(400).json({ error: 'Missing required fields' });
   }
 
   try {
     const messages = [
       {
         role: 'system',
-        content: `You are an expert trekking itinerary planner. Create detailed, scenic, and well-paced 3-day itineraries.`,
+        content: `You are a helpful travel assistant that builds multi-day trekking itineraries for users based on their location and preferences. Return all output in plain text with section headers marked as ###.`
       },
       {
         role: 'user',
-        content: `Location: ${location}\nFilters: ${JSON.stringify(filters)}\nComments: ${comments}`,
-      },
+        content: `Location: ${location}\nFilters: ${JSON.stringify(filters)}\nComments: ${comments}`
+      }
     ];
 
-    const completion = await openai.createChatCompletion({
+    const completion = await openai.chat.completions.create({
       model: 'gpt-4',
       messages,
-      temperature: 0.7,
-      max_tokens: 1000,
+      temperature: 0.7
     });
 
-    const reply = completion.data.choices[0].message.content;
-    res.json({ reply });
+    const reply = completion.choices?.[0]?.message?.content?.trim();
 
-  } catch (error) {
-    console.error('API Error:', error);
-
-    if (error.response) {
-      console.error('Status:', error.response.status);
-      console.error('Data:', error.response.data);
+    if (!reply) {
+      return res.status(500).json({ error: 'No response from OpenAI' });
     }
 
-    res.status(500).json({ error: 'Failed to generate itinerary' });
+    res.json({ reply });
+  } catch (error) {
+    console.error('OpenAI API error:', error);
+    res.status(500).json({ error: 'An error occurred while generating the itinerary' });
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
 });
