@@ -1,4 +1,4 @@
-// ✅ FINAL index.js — Combines full original functionality with updated CORS + OpenAI SDK
+// ✅ FINAL index.js — Enhanced with dynamic day count prompt
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -30,7 +30,6 @@ app.get('/', (req, res) => {
   res.send('✅ TrekAI server is running');
 });
 
-// /api/start endpoint
 app.post('/api/start', async (req, res) => {
   const { location } = req.body;
   if (!location) return res.status(400).json({ error: 'Location is required.' });
@@ -59,13 +58,15 @@ app.post('/api/start', async (req, res) => {
   }
 });
 
-// /api/finalize endpoint
 app.post('/api/finalize', async (req, res) => {
   const { location, filters, comments } = req.body;
 
   if (!location || !filters) {
     return res.status(400).json({ error: 'Location and filters are required.' });
   }
+
+  const dayMatch = location.match(/(\d+)\s*(day|night)/i);
+  const dayInfo = dayMatch ? `${dayMatch[1]}-day` : '';
 
   const filterSummary = `
 Location: ${location}
@@ -82,14 +83,11 @@ User Notes: ${comments || 'None'}
       messages: [
         {
           role: 'system',
-          content: `
-You are a professional trekking guide AI.
-
-First, determine the number of trekking days from the user's request or comments. If no specific number is given, default to 3 days.
+          content: `You are a professional trekking guide AI.
 
 Respond with three clearly separated sections:
 
-Start with a short paragraph, then outline each day using:
+Start with a short paragraph about the hike, then outline each day using:
 Day X: Title
 - Start:
 - End:
@@ -107,12 +105,11 @@ Provide a detailed, bullet-point list of essential gear, clothing, and safety it
 Offer concise local tips as a bulleted list (use dashes). Include insights about local culture, attractions, safety and food. Ensure each point starts on a new line.
 
 Do not use markdown styling. Keep formatting clean and consistent.
-Do not include ### in the body of the response. Only use them as section headers: ### Packing List and ### Local Insights.
-`.trim()
+Do not include ### in the body of the response. Only use them as section headers: ### Packing List and ### Local Insights.`
         },
         {
           role: 'user',
-          content: `Here are the trek preferences:\n\n${filterSummary}\n\nPlease generate the full itinerary, packing list, and local insights.`
+          content: `Here are the trek preferences (${dayInfo} itinerary preferred):\n\n${filterSummary}\n\nPlease generate the full itinerary, packing list, and local insights.`
         }
       ],
       temperature: 0.8,
