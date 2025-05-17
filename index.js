@@ -13,7 +13,6 @@ const allowedOrigins = [
   'https://feature-test-customize-page--delightful-croquembouche-cafa23.netlify.app',
   'https://smarttrails.pro'
 ];
-];
 
 app.use(cors({
   origin: (origin, callback) => {
