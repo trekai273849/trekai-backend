@@ -4,33 +4,44 @@ const axios = require('axios');
 const cors = require('cors');
 
 const app = express();
-app.use(cors());
+
+// Configure CORS with dynamic origin handling
+const allowedOrigins = [
+  'http://localhost:8888', // Netlify local dev
+  'http://localhost:3000', // Local React
+  'http://localhost:5173', // Vite
+  'https://your-live-frontend.netlify.app', // ✅ Replace with your Netlify production URL
+  'https://trekai.netlify.app', // Example
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like curl, Postman)
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
+  methods: ['GET', 'POST'],
+  credentials: true
+}));
+
 app.use(express.json());
 
 app.get('/', (req, res) => {
   res.send('✅ TrekAI server is running');
 });
 
-// Step 1: Initial location-based message
 app.post('/api/start', async (req, res) => {
   const { location } = req.body;
-
-  if (!location) {
-    return res.status(400).json({ error: 'Location is required.' });
-  }
+  if (!location) return res.status(400).json({ error: 'Location is required.' });
 
   try {
     const response = await axios.post('https://api.openai.com/v1/chat/completions', {
       model: 'gpt-3.5-turbo',
       messages: [
-        {
-          role: 'system',
-          content: 'You are a trekking guide assistant. Ask helpful follow-up questions to personalize the trek.'
-        },
-        {
-          role: 'user',
-          content: `I'm interested in trekking in ${location}.`
-        }
+        { role: 'system', content: 'You are a trekking guide assistant. Ask helpful follow-up questions to personalize the trek.' },
+        { role: 'user', content: `I'm interested in trekking in ${location}.` }
       ],
       temperature: 0.7
     }, {
@@ -47,13 +58,9 @@ app.post('/api/start', async (req, res) => {
   }
 });
 
-// Step 2: Final itinerary generation with filters, plus packing and insights
 app.post('/api/finalize', async (req, res) => {
   const { location, filters, comments } = req.body;
-
-  if (!location || !filters) {
-    return res.status(400).json({ error: 'Location and filters are required.' });
-  }
+  if (!location || !filters) return res.status(400).json({ error: 'Location and filters are required.' });
 
   const filterSummary = `
 Location: ${location}
@@ -71,7 +78,6 @@ User Notes: ${comments || 'None'}
         {
           role: 'system',
           content: `
-
 You are a professional trekking guide AI.
 
 Respond with three clearly separated sections:
@@ -96,8 +102,7 @@ Offer concise local tips as a bulleted list (use dashes). Include insights about
 Do not use markdown styling. Keep formatting clean and consistent.
 
 Do not include ### in the body of the response. Only use them as section headers: ### Packing List and ### Local Insights.
-
-`.trim()
+        `.trim()
         },
         {
           role: 'user',
@@ -107,7 +112,7 @@ Here are the trek preferences:
 ${filterSummary}
 
 Please generate the full itinerary, packing list, and local insights.
-`.trim()
+        `.trim()
         }
       ],
       temperature: 0.8,
