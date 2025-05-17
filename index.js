@@ -8,13 +8,12 @@ const app = express();
 
 // ✅ Replace with your actual Netlify frontend origin
 const allowedOrigins = [
+  const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'https://feature-test-customize-page--delightful-croquembouche-cafa23.netlify.app',
-  'https://trekai-api-staging.onrender.com/api/finalize'
-  'https://trekai-api-staging.onrender.com/api/finalize'
-  'https://trekai-api.onrender.com/api/finalize'
-  'https://https://smarttrails.pro'
+  'https://smarttrails.pro'
+];
 ];
 
 app.use(cors({
