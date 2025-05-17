@@ -1,66 +1,69 @@
 const express = require('express');
-const axios = require('axios');
 const cors = require('cors');
-require('dotenv').config();
+const bodyParser = require('body-parser');
+const { Configuration, OpenAIApi } = require('openai');
 
 const app = express();
+const port = process.env.PORT || 3000;
 
 const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
   'https://feature-test-customize-page--delightful-croquembouche-cafa23.netlify.app',
-  'https://smarttrails.pro'
+  'https://smarttrails.pro',
 ];
 
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    callback(new Error('Not allowed by CORS'));
-  },
-  methods: ['GET', 'POST'],
-  credentials: true
+  origin: allowedOrigins,
+  methods: ['POST', 'GET'],
+  allowedHeaders: ['Content-Type'],
 }));
 
-app.use(express.json());
+app.use(bodyParser.json());
+
+const openai = new OpenAIApi(new Configuration({
+  apiKey: process.env.OPENAI_API_KEY,
+}));
 
 app.post('/api/finalize', async (req, res) => {
+  const { location, filters, comments } = req.body;
+
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(500).json({ error: 'Missing OpenAI API Key' });
+  }
+
   try {
-    const { location, filters, comments } = req.body;
-
-    const systemPrompt = `
-You are an expert local mountain guide. Based on the user's location and preferences, generate a detailed multi-day trekking itinerary including hiking routes, huts, and daily highlights. Format the itinerary using markdown headers: "### Itinerary", followed by each day (e.g., "Day 1: ...", "Day 2: ..."), then conclude with "### Packing List" and "### Local Insights".
-`;
-
     const messages = [
-      { role: 'system', content: systemPrompt },
+      {
+        role: 'system',
+        content: `You are an expert trekking itinerary planner. Create detailed, scenic, and well-paced 3-day itineraries.`,
+      },
       {
         role: 'user',
-        content: `Location: ${location}\nFilters: ${JSON.stringify(filters)}\nComments: ${comments}`
-      }
+        content: `Location: ${location}\nFilters: ${JSON.stringify(filters)}\nComments: ${comments}`,
+      },
     ];
 
-    const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+    const completion = await openai.createChatCompletion({
       model: 'gpt-4',
       messages,
-      temperature: 0.7
-    }, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-      },
-      timeout: 10000
+      temperature: 0.7,
+      max_tokens: 1000,
     });
 
-    const reply = response.data.choices[0].message.content;
+    const reply = completion.data.choices[0].message.content;
     res.json({ reply });
 
   } catch (error) {
-    console.error('API Error:', error.message);
+    console.error('API Error:', error);
+
+    if (error.response) {
+      console.error('Status:', error.response.status);
+      console.error('Data:', error.response.data);
+    }
+
     res.status(500).json({ error: 'Failed to generate itinerary' });
   }
 });
 
-const PORT = process.env.PORT || 5050;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});
