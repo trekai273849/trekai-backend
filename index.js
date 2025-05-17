@@ -1,4 +1,3 @@
-
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
@@ -6,7 +5,6 @@ require('dotenv').config();
 
 const app = express();
 
-// ✅ Replace with your actual Netlify frontend origin
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
@@ -37,7 +35,10 @@ You are an expert local mountain guide. Based on the user's location and prefere
 
     const messages = [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: \`Location: \${location}\nFilters: \${JSON.stringify(filters)}\nComments: \${comments}\` }
+      {
+        role: 'user',
+        content: `Location: ${location}\nFilters: ${JSON.stringify(filters)}\nComments: ${comments}`
+      }
     ];
 
     const response = await axios.post('https://api.openai.com/v1/chat/completions', {
@@ -47,13 +48,14 @@ You are an expert local mountain guide. Based on the user's location and prefere
     }, {
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': \`Bearer \${process.env.OPENAI_API_KEY}\`
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
       },
-      timeout: 10000 // 10 seconds timeout
+      timeout: 10000
     });
 
     const reply = response.data.choices[0].message.content;
     res.json({ reply });
+
   } catch (error) {
     console.error('API Error:', error.message);
     res.status(500).json({ error: 'Failed to generate itinerary' });
