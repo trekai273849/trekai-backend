@@ -1,4 +1,4 @@
-// ✅ FULLY UPDATED index.js — Enhanced with output normalizer and improved prompt
+// ✅ COMPLETE ENHANCED index.js — With rich content generation
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -30,52 +30,58 @@ app.get('/', (req, res) => {
   res.send('✅ TrekAI server is running');
 });
 
-// Helper function to normalize GPT output
-function normalizeGptOutput(gptResponse) {
+// Enhanced normalizer function for rich content
+function enhancedNormalizeOutput(gptResponse) {
   let output = gptResponse;
 
   // Make sure day headings are properly formatted with ### prefix
   output = output.replace(/^(\s*Day\s+\d+:)/gm, '### $1');
   
   // Make sure section headings are properly formatted
-  if (!output.includes('### Packing List')) {
-    // Find packing list and add heading if not properly formatted
-    const packingMatch = output.match(/(?:^|\n)(?:\d+\.\s*)?(?:packing list|what to pack)(?:\s*\:)?/i);
-    if (packingMatch) {
-      output = output.replace(packingMatch[0], '\n\n### Packing List\n');
-    }
-  }
+  const sectionHeaders = [
+    'Packing List', 
+    'Local Insights', 
+    'Practical Information'
+  ];
   
-  if (!output.includes('### Local Insights')) {
-    // Find local insights and add heading if not properly formatted
-    const insightsMatch = output.match(/(?:^|\n)(?:\d+\.\s*)?(?:local insights|useful tips|local tips)(?:\s*\:)?/i);
-    if (insightsMatch) {
-      output = output.replace(insightsMatch[0], '\n\n### Local Insights\n');
+  sectionHeaders.forEach(header => {
+    if (!output.includes(`### ${header}`)) {
+      // Find section and add proper heading if not formatted correctly
+      const headerRegex = new RegExp(`(?:^|\\n)(?:\\d+\\.\\s*)?(?:${header})(?:\\s*\\:)?`, 'i');
+      const headerMatch = output.match(headerRegex);
+      if (headerMatch) {
+        output = output.replace(headerMatch[0], `\n\n### ${header}\n`);
+      }
     }
-  }
+  });
 
-  // Make sure each day section has proper bullet points for structured data
-  const dayRegex = /### Day \d+:.*?(?=### Day \d+:|### Packing List|### Local Insights|$)/gs;
+  // Process each day section to ensure proper field formatting
+  const dayRegex = /### Day \d+:.*?(?=### Day \d+:|### Packing List|### Local Insights|### Practical Information|$)/gs;
   let processedOutput = output;
   let match;
   
   while ((match = dayRegex.exec(output)) !== null) {
     let daySection = match[0];
-    const dayHeader = daySection.match(/(### Day \d+:.*?)(?:\n|$)/)[0];
+    const dayHeaderMatch = daySection.match(/(### Day \d+:.*?)(?:\n|$)/);
+    
+    if (!dayHeaderMatch) continue;
+    
+    const dayHeader = dayHeaderMatch[0];
     
     // Get section content without the header
     let dayContent = daySection.replace(dayHeader, '').trim();
     
     // Process each expected field if not already formatted with bullet points
     if (!dayContent.match(/\n\s*-\s*Start:/)) {
-      // Find and format each standard field
+      // List of all possible fields in enhanced format
       const fields = [
-        'Start', 'End', 'Distance', 'Elevation', 'Difficulty', 
-        'Lunch', 'Accommodation', 'Tips'
+        'Start', 'End', 'Distance', 'Elevation gain/loss', 'Elevation',
+        'Terrain', 'Difficulty', 'Highlights', 'Lunch', 'Accommodation',
+        'Water sources', 'Tips'
       ];
       
       fields.forEach(field => {
-        const fieldRegex = new RegExp(`\\b${field}\\s*:\\s*([^\\n]+)`, 'i');
+        const fieldRegex = new RegExp(`\\b${field.replace(/\//g, '\\/').replace(/\(/g, '\\(').replace(/\)/g, '\\)')}\\s*:\\s*([^\\n]+)`, 'i');
         const fieldMatch = dayContent.match(fieldRegex);
         
         if (fieldMatch) {
@@ -93,31 +99,33 @@ function normalizeGptOutput(gptResponse) {
     }
   }
 
-  // Convert packing list and local insights to bullet points if not already
-  ['Packing List', 'Local Insights'].forEach(section => {
-    const sectionRegex = new RegExp(`### ${section}\\s*([\\s\\S]*?)(?=###|$)`, 'g');
-    const sectionMatch = sectionRegex.exec(processedOutput);
+  // Process detailed subsections in Packing List, Local Insights, etc.
+  const sectionRegex = /### (Packing List|Local Insights|Practical Information)\s*([\s\S]*?)(?=###|$)/g;
+  let sectionMatch;
+  
+  while ((sectionMatch = sectionRegex.exec(processedOutput)) !== null) {
+    const sectionName = sectionMatch[1];
+    let sectionContent = sectionMatch[2].trim();
     
-    if (sectionMatch) {
-      let content = sectionMatch[1].trim();
-      
-      // Only process if not already in bullet point format
-      if (!content.match(/^\s*-\s/m)) {
-        // Split by newlines and convert to bullet points
-        const lines = content.split('\n')
-          .map(line => line.trim())
-          .filter(line => line)
-          .map(line => {
-            // Convert to bullet point if not already
-            return line.startsWith('-') ? line : `- ${line.replace(/^\d+\.\s*/, '')}`;
-          });
-        
-        // Replace content with bullet points
-        const newContent = '\n' + lines.join('\n') + '\n\n';
-        processedOutput = processedOutput.replace(sectionMatch[0], `### ${section}${newContent}`);
+    // Handle subsection headers (marked with asterisks)
+    const subsectionRegex = /\*(.*?):\*/g;
+    let formattedContent = sectionContent;
+    
+    // Format subsection headers to be bold
+    formattedContent = formattedContent.replace(subsectionRegex, '*$1:*');
+    
+    // Ensure each line in the section starts with a bullet point
+    const lines = formattedContent.split('\n').map(line => {
+      line = line.trim();
+      if (line && !line.startsWith('-') && !line.startsWith('*') && !line.startsWith('**')) {
+        return `- ${line}`;
       }
-    }
-  });
+      return line;
+    });
+    
+    const newSectionContent = '\n' + lines.join('\n') + '\n\n';
+    processedOutput = processedOutput.replace(sectionMatch[0], `### ${sectionName}${newSectionContent}`);
+  }
   
   return processedOutput;
 }
@@ -169,46 +177,87 @@ Technical: ${filters.technical || 'Not specified'}
 User Notes: ${comments || 'None'}
 `;
 
-  // Improved GPT prompt template with strict formatting guidelines
-  const systemPrompt = `
-You are a professional trekking guide AI that creates detailed itineraries.
+  // Enhanced GPT prompt for richer trek itineraries
+  const enhancedSystemPrompt = `
+You are an expert trekking guide AI specializing in creating detailed, practical itineraries with rich local knowledge.
 
-Your response MUST follow this EXACT format with these sections:
+Your response MUST follow this EXACT format with these enhanced sections:
 
-1. A brief intro paragraph (2-3 sentences max).
+1. A compelling intro paragraph (2-3 sentences) that captures the essence of the trek and highlights a unique feature.
 
 2. Day-by-day itinerary using this exact format for EACH day:
-### Day X: [Title]
-- Start: [location]
-- End: [location]
-- Distance: [X km (X miles)]
-- Elevation: [X m (X ft)]
-- Difficulty: [Easy/Moderate/Challenging]
-- Lunch: [description]
-- Accommodation: [description]
-- Tips: [brief tip]
+### Day X: [Descriptive Title with Notable Feature]
+- Start: [location, with altitude if relevant]
+- End: [location, with altitude if relevant]
+- Distance: [X km (X miles)] - mention if it's mostly uphill/downhill/flat
+- Elevation gain/loss: [X m (X ft)]
+- Terrain: [brief description e.g., rocky paths, forest trails, alpine meadows, etc.]
+- Difficulty: [Easy/Moderate/Challenging] with brief explanation why
+- Highlights: [2-3 specific points of interest, landmarks, or views]
+- Lunch: [specific recommendation with local specialties if applicable]
+- Accommodation: [specific name if known, with brief description]
+- Water sources: [information about water availability on trail]
+- Tips: [practical advice specific to this day's trek]
 
-3. A packing list section with this exact heading:
+3. A detailed packing list section with categories:
 ### Packing List
+*Essentials:*
+- [item with brief explanation if needed]
 - [item]
-- [item]
-- [item]
-(continue with bulleted list)
 
-4. A local insights section with this exact heading:
+*Clothing:*
+- [specific clothing recommendations for this trek's conditions]
+- [item]
+
+*Trek-Specific Gear:*
+- [items particularly important for this region/trek]
+- [item]
+
+*Documentation:*
+- [permits, maps, or documentation needed]
+- [item]
+
+4. A comprehensive local insights section:
 ### Local Insights
+*Cultural Considerations:*
+- [specific cultural practices or etiquette for the region]
 - [insight]
+
+*Safety Information:*
+- [region-specific safety tips, wildlife awareness, weather patterns]
 - [insight]
+
+*Local Food & Specialties:*
+- [regional dishes or foods worth trying]
 - [insight]
-(continue with bulleted list)
+
+*Language Tips:*
+- [2-3 useful phrases in local language if relevant]
+- [insight]
+
+5. A practical information section:
+### Practical Information
+*Best Time to Visit:*
+- [specific months or seasons with brief weather patterns]
+
+*Getting There:*
+- [practical transportation options to starting point]
+
+*Permits & Regulations:*
+- [any required permits, fees, or regulations]
+
+*Emergency Contacts:*
+- [nearest medical facilities or emergency numbers]
 
 CRITICAL FORMATTING RULES:
 - Use "### Day X:" format for EVERY day header
 - Use bullet points (single hyphen) for ALL data points within each day
-- ALWAYS include ALL sections (intro, all days, packing list, local insights)
+- ALWAYS include ALL sections (intro, all days, packing list, local insights, practical info)
 - Use the EXACT format shown above including all field names
-- Do not add any additional headers or sections
-- ALWAYS include all fields (Start, End, Distance, etc.) for every day
+- ALWAYS include all fields for every day, with specific, actionable information
+- Focus on providing SPECIFIC details rather than generic advice
+- Include regional specialties, cultural insights, and location-specific information
+- Mention actual place names, trail features, and local terminology when possible
 `;
 
   try {
@@ -217,7 +266,7 @@ CRITICAL FORMATTING RULES:
       messages: [
         {
           role: 'system',
-          content: systemPrompt
+          content: enhancedSystemPrompt
         },
         {
           role: 'user',
@@ -228,33 +277,31 @@ ${filterSummary}
 
 If the user specifies a number of days (e.g. "6-day trek", "10 days in Nepal", etc), generate that number of individual day entries.
 
-Each day MUST follow this exact format:
-### Day X: [Title]
-- Start: [location]
-- End: [location]
-- Distance: [X km (X miles)]
-- Elevation: [X m (X ft)]
-- Difficulty: [Easy/Moderate/Challenging]
-- Lunch: [description]
-- Accommodation: [description]
-- Tips: [brief tip]
+Each day MUST follow the exact format specified, with special attention to:
+1. Providing SPECIFIC locations, landmarks, and points of interest by name
+2. Including practical details about terrain, water sources, and trail conditions
+3. Mentioning actual local food specialties and accommodation options
+4. Adding region-specific cultural and safety information
 
-Please generate the full itinerary with proper formatting for each day, plus packing list and local insights sections.
+For ${location}, include authentic local knowledge about the trails, culture, and environment. 
+Make this itinerary highly specific to the region rather than generic trekking advice.
+
+Please generate the full itinerary with proper formatting for each day, plus the enhanced sections.
           `.trim()
         }
       ],
-      temperature: 0.8,
-      max_tokens: 2500
+      temperature: 0.7, // Slightly lower temperature for more consistent outputs
+      max_tokens: 3000  // Increased token limit for more detailed content
     });
 
     const reply = completion.choices?.[0]?.message?.content?.trim();
 
     // Normalize the output before sending it to the client
-    const normalizedReply = normalizeGptOutput(reply);
+    const normalizedReply = enhancedNormalizeOutput(reply);
 
     // Log both original and normalized replies for debugging
     console.log('\n📦 Original GPT Reply:\n', reply);
-    console.log('\n📦 Normalized GPT Reply:\n', normalizedReply);
+    console.log('\n📦 Enhanced Normalized GPT Reply:\n', normalizedReply);
 
     if (!normalizedReply) return res.status(500).json({ error: 'No response from OpenAI' });
     res.json({ reply: normalizedReply });
