@@ -87,7 +87,7 @@ User Notes: ${comments || 'None'}
 
 Respond with three clearly separated sections:
 
-Start with a short paragraph about the hike, then outline each day using:
+Start with a short paragraph, then outline each day using:
 Day X: Title
 - Start:
 - End:
@@ -108,9 +108,17 @@ Do not use markdown styling. Keep formatting clean and consistent.
 Do not include ### in the body of the response. Only use them as section headers: ### Packing List and ### Local Insights.`
         },
         {
-          role: 'user',
-          content: `Here are the trek preferences (${dayInfo} itinerary preferred):\n\n${filterSummary}\n\nPlease generate the full itinerary, packing list, and local insights.`
-        }
+  role: 'user',
+  content: `Here are the trek preferences:
+
+${filterSummary}
+
+If the user specifies a number of days (e.g. "6-day trek", "10 days in Nepal", etc), generate that number of individual day entries.
+
+Each day should be clearly separated using "Day X: Title" format as described above.
+
+Please generate the full itinerary, packing list, and local insights.`
+}
       ],
       temperature: 0.8,
       max_tokens: 2500
