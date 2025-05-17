@@ -8,8 +8,8 @@ const app = express();
 app.use(express.json());
 
 const allowedOrigins = [
-  'https://smarttrails.pro',
-  'https://your-frontend.netlify.app',
+  'https://smarttrails.pro',  // Make sure your production domain is here
+  'https://www.smarttrails.pro',
   'http://localhost:3000',
   'https://feature-test-customize-page--delightful-croquembouche-cafa23.netlify.app'
 ];
