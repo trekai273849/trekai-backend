@@ -8,7 +8,6 @@ const app = express();
 
 // ✅ Replace with your actual Netlify frontend origin
 const allowedOrigins = [
-  const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'https://feature-test-customize-page--delightful-croquembouche-cafa23.netlify.app',
