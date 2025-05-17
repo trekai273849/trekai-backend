@@ -83,52 +83,61 @@ User Notes: ${comments || 'None'}
       messages: [
         {
           role: 'system',
-          content: `You are a professional trekking guide AI.
+          content: `
+You are a professional trekking guide AI.
 
-Respond with three clearly separated sections:
+Your response must include these **4 sections**, clearly separated:
 
-Start with a short paragraph, then outline each day using:
+1. A short intro paragraph.
+2. A day-by-day itinerary using this format:
 Day X: Title
 - Start:
 - End:
-- Distance: (in km and miles, e.g. "7 km (4.3 miles)")
-- Elevation: (in meters and feet, e.g. "+500m / -200m (+1640ft / -656ft)")
+- Distance: (in km and miles)
+- Elevation: (in meters and feet)
 - Difficulty:
 - Lunch:
 - Accommodation:
 - Tips:
 
-### Packing List
-Provide a detailed, bullet-point list of essential gear, clothing, and safety items based on the trip.
+3. ### Packing List
+A bullet-point list of essential items.
 
-### Local Insights
-Offer concise local tips as a bulleted list (use dashes). Include insights about local culture, attractions, safety and food. Ensure each point starts on a new line.
+4. ### Local Insights
+A bullet-point list of cultural, safety, or food tips.
 
-Do not use markdown styling. Keep formatting clean and consistent.
-Do not include ### in the body of the response. Only use them as section headers: ### Packing List and ### Local Insights.`
+🛑 Do not skip any of the 4 sections. Always include Packing List and Local Insights.
+✅ Use "### Packing List" and "### Local Insights" as section headers. Do not use markdown anywhere else.
+          `.trim()
         },
         {
-  role: 'user',
-  content: `Here are the trek preferences:
+          role: 'user',
+          content: `
+Here are the trek preferences:
 
 ${filterSummary}
 
 If the user specifies a number of days (e.g. "6-day trek", "10 days in Nepal", etc), generate that number of individual day entries.
 
-Each day should be clearly separated using "Day X: Title" format as described above.
+Each day must use "Day X: Title" format.
 
-Please generate the full itinerary, packing list, and local insights.`
-}
+Please generate the full itinerary, packing list, and local insights.
+          `.trim()
+        }
       ],
       temperature: 0.8,
       max_tokens: 2500
     });
 
     const reply = completion.choices?.[0]?.message?.content?.trim();
+
+    // ✅ Log full reply for debugging
+    console.log('\n📦 GPT Reply:\n', reply);
+
     if (!reply) return res.status(500).json({ error: 'No response from OpenAI' });
     res.json({ reply });
   } catch (error) {
-    console.error('❌ Error in /api/finalize:', error);
+    console.error('❌ Error in /api/finalize:', error.response?.data || error.message);
     res.status(500).send('Failed to generate final itinerary.');
   }
 });
