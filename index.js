@@ -1,22 +1,24 @@
-require('dotenv').config();
+
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
+require('dotenv').config();
 
 const app = express();
 
-// Configure CORS with dynamic origin handling
+// ✅ Replace with your actual Netlify frontend origin
 const allowedOrigins = [
-  'http://localhost:8888', // Netlify local dev
-  'http://localhost:3000', // Local React
-  'http://localhost:5173', // Vite
-  'https://your-live-frontend.netlify.app', // ✅ Replace with your Netlify production URL
-  'https://trekai.netlify.app', // Example
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://feature-test-customize-page--delightful-croquembouche-cafa23.netlify.app',
+  'https://trekai-api-staging.onrender.com/api/finalize'
+  'https://trekai-api-staging.onrender.com/api/finalize'
+  'https://trekai-api.onrender.com/api/finalize'
+  'https://https://smarttrails.pro'
 ];
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (like curl, Postman)
     if (!origin || allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
@@ -28,106 +30,36 @@ app.use(cors({
 
 app.use(express.json());
 
-app.get('/', (req, res) => {
-  res.send('✅ TrekAI server is running');
-});
-
-app.post('/api/start', async (req, res) => {
-  const { location } = req.body;
-  if (!location) return res.status(400).json({ error: 'Location is required.' });
-
+app.post('/api/finalize', async (req, res) => {
   try {
+    const { location, filters, comments } = req.body;
+
+    const systemPrompt = `
+You are an expert local mountain guide. Based on the user's location and preferences, generate a detailed multi-day trekking itinerary including hiking routes, huts, and daily highlights. Format the itinerary using markdown headers: "### Itinerary", followed by each day (e.g., "Day 1: ...", "Day 2: ..."), then conclude with "### Packing List" and "### Local Insights".
+`;
+
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: \`Location: \${location}\nFilters: \${JSON.stringify(filters)}\nComments: \${comments}\` }
+    ];
+
     const response = await axios.post('https://api.openai.com/v1/chat/completions', {
-      model: 'gpt-3.5-turbo',
-      messages: [
-        { role: 'system', content: 'You are a trekking guide assistant. Ask helpful follow-up questions to personalize the trek.' },
-        { role: 'user', content: `I'm interested in trekking in ${location}.` }
-      ],
+      model: 'gpt-4',
+      messages,
       temperature: 0.7
     }, {
       headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
+        'Content-Type': 'application/json',
+        'Authorization': \`Bearer \${process.env.OPENAI_API_KEY}\`
+      },
+      timeout: 10000 // 10 seconds timeout
     });
 
-    res.json({ reply: response.data.choices[0].message.content });
+    const reply = response.data.choices[0].message.content;
+    res.json({ reply });
   } catch (error) {
-    console.error('❌ Error in /api/start:', error.response?.data || error.message);
-    res.status(500).send('Failed to generate intro response.');
-  }
-});
-
-app.post('/api/finalize', async (req, res) => {
-  const { location, filters, comments } = req.body;
-  if (!location || !filters) return res.status(400).json({ error: 'Location and filters are required.' });
-
-  const filterSummary = `
-Location: ${location}
-Accommodation: ${filters.accommodation}
-Difficulty: ${filters.difficulty}
-Altitude: ${filters.altitude}
-Technical: ${filters.technical}
-User Notes: ${comments || 'None'}
-`;
-
-  try {
-    const response = await axios.post('https://api.openai.com/v1/chat/completions', {
-      model: 'gpt-4-0125-preview',
-      messages: [
-        {
-          role: 'system',
-          content: `
-You are a professional trekking guide AI.
-
-Respond with three clearly separated sections:
-
-Start with a short paragraph, then outline each day using:
-Day X: Title
-- Start:
-- End:
-- Distance: (in km and miles, e.g. "7 km (4.3 miles)")
-- Elevation: (in meters and feet, e.g. "+500m / -200m (+1640ft / -656ft)")
-- Difficulty:
-- Lunch:
-- Accommodation:
-- Tips:
-
-### Packing List
-Provide a detailed, bullet-point list of essential gear, clothing, and safety items based on the trip.
-
-### Local Insights
-Offer concise local tips as a bulleted list (use dashes). Include insights about local culture, attractions, safety and food. Ensure each point starts on a new line.
-
-Do not use markdown styling. Keep formatting clean and consistent.
-
-Do not include ### in the body of the response. Only use them as section headers: ### Packing List and ### Local Insights.
-        `.trim()
-        },
-        {
-          role: 'user',
-          content: `
-Here are the trek preferences:
-
-${filterSummary}
-
-Please generate the full itinerary, packing list, and local insights.
-        `.trim()
-        }
-      ],
-      temperature: 0.8,
-      max_tokens: 2500
-    }, {
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    res.json({ reply: response.data.choices[0].message.content });
-  } catch (error) {
-    console.error('❌ Error in /api/finalize:', error.response?.data || error.message);
-    res.status(500).send('Failed to generate final itinerary.');
+    console.error('API Error:', error.message);
+    res.status(500).json({ error: 'Failed to generate itinerary' });
   }
 });
 
