@@ -45,17 +45,33 @@ const allowedOrigins = [
   'http://127.0.0.1:8080',      
   'http://192.168.0.9:8080',    
   'https://feature-test-customize-page--delightful-croquembouche-cafa23.netlify.app',
-  'https://feature-test-user-profiles--delightful-croquembouche-cafa23.netlify.app'  // Add this new URL
+  'https://feature-test-user-profiles--delightful-croquembouche-cafa23.netlify.app'
 ];
 
+// Enable CORS preflight requests
+app.options('*', cors());
+
+// More permissive CORS configuration
 app.use(cors({
   origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+    // Allow requests with no origin (like mobile apps, Postman)
+    if (!origin) return callback(null, true);
+    
+    // Allow specified origins
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
     }
-  }
+    
+    // Allow any Netlify preview domain for your site
+    if (origin && origin.includes('delightful-croquembouche-cafa23.netlify.app')) {
+      return callback(null, true);
+    }
+    
+    // Block other origins
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true, // Allow cookies and authentication headers
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] // Include OPTIONS for preflight
 }));
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -229,15 +245,12 @@ app.post('/api/start', verifyToken, async (req, res) => {
   }
 });
 
-// Enhanced /api/finalize endpoint with authentication
-app.post('/api/finalize', verifyToken, async (req, res) => {
-  // Ensure user is authenticated
-  if (!req.user || !req.user.userId) {
-    return res.status(401).json({ error: 'Authentication required' });
-  }
-
+// Modified /api/finalize endpoint to work without authentication
+app.post('/api/finalize', async (req, res) => {
+  // Check if user is authenticated (but don't require it)
+  const userId = req.user?.userId; // Optional chaining - this will be undefined if not authenticated
+  
   const { location, filters, comments, title } = req.body;
-  const userId = req.user.userId; // Get from auth middleware
 
   if (!location || !filters) {
     return res.status(400).json({ error: 'Location and filters are required.' });
@@ -377,37 +390,46 @@ Please generate the full itinerary with proper formatting for each day, plus the
 
     if (!normalizedReply) return res.status(500).json({ error: 'No response from OpenAI' });
     
-    // Save itinerary to MongoDB with authenticated user ID
-    try {
-      const Itinerary = require('./models/Itinerary');
-      
-      const newItinerary = new Itinerary({
-        user: userId,
-        title: title || `${location} Trek`,
-        location,
-        filters,
-        comments,
-        content: normalizedReply,
-        createdAt: Date.now(),
-        lastViewed: Date.now()
-      });
-      
-      const savedItinerary = await newItinerary.save();
-      console.log(`✅ Itinerary saved to database with ID: ${savedItinerary._id}`);
-      
-      // Return both the content and the saved itinerary with ID
+    // Only attempt to save if user is authenticated
+    if (userId) {
+      try {
+        const Itinerary = require('./models/Itinerary');
+        
+        const newItinerary = new Itinerary({
+          user: userId,
+          title: title || `${location} Trek`,
+          location,
+          filters,
+          comments,
+          content: normalizedReply,
+          createdAt: Date.now(),
+          lastViewed: Date.now()
+        });
+        
+        const savedItinerary = await newItinerary.save();
+        console.log(`✅ Itinerary saved to database with ID: ${savedItinerary._id}`);
+        
+        // Return both the content and the saved itinerary with ID
+        return res.json({ 
+          reply: normalizedReply,
+          itineraryId: savedItinerary._id,
+          message: 'Itinerary saved to database'
+        });
+      } catch (dbError) {
+        console.error('❌ Error saving to database:', dbError);
+        // Return content even if database save fails
+        return res.json({ 
+          reply: normalizedReply,
+          error: 'Failed to save to database',
+          message: 'Generated itinerary but failed to save to database'
+        });
+      }
+    } else {
+      // User is not authenticated, just return the content without saving
       return res.json({ 
         reply: normalizedReply,
-        itineraryId: savedItinerary._id,
-        message: 'Itinerary saved to database'
-      });
-    } catch (dbError) {
-      console.error('❌ Error saving to database:', dbError);
-      // Still return the content even if database save fails
-      return res.json({ 
-        reply: normalizedReply,
-        error: 'Failed to save to database',
-        message: 'Generated itinerary but failed to save to database'
+        isAuthenticated: false,
+        message: 'Itinerary generated but not saved (user not authenticated)'
       });
     }
   } catch (error) {
