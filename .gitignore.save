@@ -5,24 +5,22 @@
 # Dependencies
 node_modules/
 
-# Environment variables
+# Environment files
 .env
-.env.local
-.env.development
-.env.test
-.env.production
 .env.save
 .env.*
 
 # Multiple gitignore files (clean these up)
 .gitignore 2
 
+# Firebase credentials
+FB_Private_Key.js
+firebase-service-account.json
+**/firebase-config-*.json
+
 # Logs
 logs
 *.log
 npm-debug.log*
 
-# Firebase credentials
-FB_Private_Key.js
-firebase-service-account.json
-**/firebase-config-*.json
+
