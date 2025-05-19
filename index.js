@@ -41,6 +41,9 @@ const allowedOrigins = [
   'https://smarttrails.pro',
   'https://www.smarttrails.pro',
   'http://localhost:3000',
+  'http://localhost:8080',      // Add this for your http-server
+  'http://127.0.0.1:8080',      // Add this for http-server localhost
+  'http://192.168.0.9:8080',    // Add this for your local network IP
   'https://feature-test-customize-page--delightful-croquembouche-cafa23.netlify.app'
 ];
 
