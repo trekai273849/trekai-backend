@@ -6,13 +6,8 @@ const Itinerary = require('../models/Itinerary');
 // Get all itineraries for a user
 router.get('/', async (req, res) => {
   try {
-    // In a real app, you would get userId from auth middleware
-    // This is a placeholder - replace with actual auth logic
-    const userId = req.query.userId; 
-    
-    if (!userId) {
-      return res.status(400).json({ error: 'User ID is required' });
-    }
+    // Now getting userId from auth middleware
+    const userId = req.user.userId;
     
     const itineraries = await Itinerary.find({ user: userId })
       .sort({ createdAt: -1 });
@@ -33,6 +28,11 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Itinerary not found' });
     }
     
+    // Check if the itinerary belongs to the authenticated user
+    if (itinerary.user.toString() !== req.user.userId.toString()) {
+      return res.status(403).json({ error: 'Not authorized to access this itinerary' });
+    }
+    
     // Update lastViewed timestamp
     itinerary.lastViewed = Date.now();
     await itinerary.save();
@@ -47,14 +47,14 @@ router.get('/:id', async (req, res) => {
 // Save a new itinerary
 router.post('/', async (req, res) => {
   try {
-    const { userId, title, location, filters, comments, content } = req.body;
+    const { title, location, filters, comments, content } = req.body;
     
-    if (!userId || !title || !location || !content) {
+    if (!title || !location || !content) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
     
     const newItinerary = new Itinerary({
-      user: userId,
+      user: req.user.userId, // Get from auth middleware
       title,
       location,
       filters: filters || {},
@@ -73,18 +73,26 @@ router.post('/', async (req, res) => {
 // Update an itinerary
 router.put('/:id', async (req, res) => {
   try {
-    const updates = req.body;
-    const itinerary = await Itinerary.findByIdAndUpdate(
-      req.params.id,
-      { $set: updates },
-      { new: true }
-    );
+    // First find the itinerary to check ownership
+    const itinerary = await Itinerary.findById(req.params.id);
     
     if (!itinerary) {
       return res.status(404).json({ error: 'Itinerary not found' });
     }
     
-    res.json(itinerary);
+    // Check ownership
+    if (itinerary.user.toString() !== req.user.userId.toString()) {
+      return res.status(403).json({ error: 'Not authorized to update this itinerary' });
+    }
+    
+    const updates = req.body;
+    const updatedItinerary = await Itinerary.findByIdAndUpdate(
+      req.params.id,
+      { $set: updates },
+      { new: true }
+    );
+    
+    res.json(updatedItinerary);
   } catch (error) {
     console.error('Error updating itinerary:', error);
     res.status(500).json({ error: 'Server error' });
@@ -94,11 +102,19 @@ router.put('/:id', async (req, res) => {
 // Delete an itinerary
 router.delete('/:id', async (req, res) => {
   try {
-    const itinerary = await Itinerary.findByIdAndDelete(req.params.id);
+    // First find the itinerary to check ownership
+    const itinerary = await Itinerary.findById(req.params.id);
     
     if (!itinerary) {
       return res.status(404).json({ error: 'Itinerary not found' });
     }
+    
+    // Check ownership
+    if (itinerary.user.toString() !== req.user.userId.toString()) {
+      return res.status(403).json({ error: 'Not authorized to delete this itinerary' });
+    }
+    
+    await Itinerary.findByIdAndDelete(req.params.id);
     
     res.json({ message: 'Itinerary deleted successfully' });
   } catch (error) {

@@ -16,3 +16,8 @@ node_modules/
 logs
 *.log
 npm-debug.log*
+
+# Firebase credentials
+FB_Private_Key.js
+firebase-service-account.json
+**/firebase-config-*.json

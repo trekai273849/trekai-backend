@@ -1,4 +1,4 @@
-// Enhanced index.js with MongoDB integration
+// Enhanced index.js with MongoDB and Firebase integration
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -6,6 +6,11 @@ const OpenAI = require('openai');
 const connectDB = require('./config/database');
 const path = require('path');
 const fs = require('fs');
+const cookieParser = require('cookie-parser'); // Add cookie parser
+const { verifyToken } = require('./middleware/auth'); // Add auth middleware
+
+// Initialize Firebase
+require('./config/firebase-config');
 
 // Create routes directory if it doesn't exist
 const routesDir = path.join(__dirname, 'routes');
@@ -22,6 +27,7 @@ if (!fs.existsSync(itinerariesRoutePath)) {
 
 const app = express();
 app.use(express.json());
+app.use(cookieParser()); // Add cookie parser middleware
 
 // Database connection with better error handling
 connectDB()
@@ -74,12 +80,16 @@ app.get('/api/health', async (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.send('✅ TrekAI server is running with MongoDB integration');
+  res.send('✅ TrekAI server is running with MongoDB and Firebase integration');
 });
 
-// Import and use itineraries routes
+// Import routes
 const itinerariesRoutes = require('./routes/itineraries');
-app.use('/api/itineraries', itinerariesRoutes);
+const userRoutes = require('./routes/users'); // Add user routes
+
+// Use routes with authentication middleware
+app.use('/api/users', userRoutes); // Add user routes
+app.use('/api/itineraries', verifyToken, itinerariesRoutes); // Add auth middleware to itineraries routes
 
 // Function to enhance itinerary output
 function enhancedNormalizeOutput(gptResponse) {
@@ -181,10 +191,15 @@ function enhancedNormalizeOutput(gptResponse) {
   return processedOutput;
 }
 
-// Enhanced /api/start endpoint with userId support
-app.post('/api/start', async (req, res) => {
-  const { location, userId } = req.body;
+// Enhanced /api/start endpoint with authentication
+app.post('/api/start', verifyToken, async (req, res) => {
+  const { location } = req.body;
   if (!location) return res.status(400).json({ error: 'Location is required.' });
+
+  // Ensure user is authenticated
+  if (!req.user || !req.user.userId) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
 
   try {
     const completion = await openai.chat.completions.create({
@@ -203,16 +218,22 @@ app.post('/api/start', async (req, res) => {
     });
 
     const reply = completion.choices?.[0]?.message?.content?.trim();
-    res.json({ reply, userId });
+    res.json({ reply, userId: req.user.userId });
   } catch (error) {
     console.error('❌ Error in /api/start:', error);
     res.status(500).send('Failed to generate intro response.');
   }
 });
 
-// Enhanced /api/finalize endpoint with MongoDB integration
-app.post('/api/finalize', async (req, res) => {
-  const { location, filters, comments, userId, title } = req.body;
+// Enhanced /api/finalize endpoint with authentication
+app.post('/api/finalize', verifyToken, async (req, res) => {
+  // Ensure user is authenticated
+  if (!req.user || !req.user.userId) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  const { location, filters, comments, title } = req.body;
+  const userId = req.user.userId; // Get from auth middleware
 
   if (!location || !filters) {
     return res.status(400).json({ error: 'Location and filters are required.' });
@@ -352,49 +373,59 @@ Please generate the full itinerary with proper formatting for each day, plus the
 
     if (!normalizedReply) return res.status(500).json({ error: 'No response from OpenAI' });
     
-    // Save itinerary to MongoDB if userId is provided
-    if (userId) {
-      try {
-        const Itinerary = require('./models/Itinerary');
-        
-        const newItinerary = new Itinerary({
-          user: userId,
-          title: title || `${location} Trek`,
-          location,
-          filters,
-          comments,
-          content: normalizedReply,
-          createdAt: Date.now(),
-          lastViewed: Date.now()
-        });
-        
-        const savedItinerary = await newItinerary.save();
-        console.log(`✅ Itinerary saved to database with ID: ${savedItinerary._id}`);
-        
-        // Return both the content and the saved itinerary with ID
-        return res.json({ 
-          reply: normalizedReply,
-          itineraryId: savedItinerary._id,
-          message: 'Itinerary saved to database'
-        });
-      } catch (dbError) {
-        console.error('❌ Error saving to database:', dbError);
-        // Still return the content even if database save fails
-        return res.json({ 
-          reply: normalizedReply,
-          error: 'Failed to save to database',
-          message: 'Generated itinerary but failed to save to database'
-        });
-      }
+    // Save itinerary to MongoDB with authenticated user ID
+    try {
+      const Itinerary = require('./models/Itinerary');
+      
+      const newItinerary = new Itinerary({
+        user: userId,
+        title: title || `${location} Trek`,
+        location,
+        filters,
+        comments,
+        content: normalizedReply,
+        createdAt: Date.now(),
+        lastViewed: Date.now()
+      });
+      
+      const savedItinerary = await newItinerary.save();
+      console.log(`✅ Itinerary saved to database with ID: ${savedItinerary._id}`);
+      
+      // Return both the content and the saved itinerary with ID
+      return res.json({ 
+        reply: normalizedReply,
+        itineraryId: savedItinerary._id,
+        message: 'Itinerary saved to database'
+      });
+    } catch (dbError) {
+      console.error('❌ Error saving to database:', dbError);
+      // Still return the content even if database save fails
+      return res.json({ 
+        reply: normalizedReply,
+        error: 'Failed to save to database',
+        message: 'Generated itinerary but failed to save to database'
+      });
     }
-    
-    // If no userId, just return the generated content
-    res.json({ reply: normalizedReply });
   } catch (error) {
     console.error('❌ Error in /api/finalize:', error.response?.data || error.message);
     res.status(500).send('Failed to generate final itinerary.');
   }
 });
+
+// Add error handler middleware
+const errorHandler = (err, req, res, next) => {
+  console.error(err.stack);
+  
+  const statusCode = err.statusCode || 500;
+  const message = err.message || 'Internal Server Error';
+  
+  res.status(statusCode).json({
+    error: message,
+    stack: process.env.NODE_ENV === 'production' ? '🥞' : err.stack
+  });
+};
+
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
