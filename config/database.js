@@ -1,3 +1,4 @@
+cat > config/database.js << 'EOF'
 // config/database.js
 const mongoose = require('mongoose');
 require('dotenv').config();
@@ -21,3 +22,4 @@ const connectDB = async () => {
 };
 
 module.exports = connectDB;
+EOF
