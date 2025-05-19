@@ -1,21 +1,38 @@
-// ✅ COMPLETE ENHANCED index.js — With rich content generation
+// Enhanced index.js with MongoDB integration
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const OpenAI = require('openai');
-const mongoose = require('mongoose'); // Add mongoose
-const connectDB = require('./config/database'); // Add database connection
+const connectDB = require('./config/database');
+const path = require('path');
+const fs = require('fs');
+
+// Create routes directory if it doesn't exist
+const routesDir = path.join(__dirname, 'routes');
+if (!fs.existsSync(routesDir)) {
+  fs.mkdirSync(routesDir);
+}
+
+// Create the itineraries routes file if it doesn't exist
+const itinerariesRoutePath = path.join(routesDir, 'itineraries.js');
+if (!fs.existsSync(itinerariesRoutePath)) {
+  // You'll need to create this file using the code provided earlier
+  console.log('Please create the routes/itineraries.js file using the provided code');
+}
 
 const app = express();
 app.use(express.json());
 
-// Connect to MongoDB
+// Database connection with better error handling
 connectDB()
   .then(() => console.log('📊 MongoDB connected successfully'))
-  .catch(err => console.error('❌ MongoDB connection error:', err));
+  .catch(err => {
+    console.error('❌ MongoDB connection error:', err);
+    process.exit(1); // Exit on failed connection
+  });
 
 const allowedOrigins = [
-  'https://smarttrails.pro',  // Make sure your production domain is here
+  'https://smarttrails.pro',
   'https://www.smarttrails.pro',
   'http://localhost:3000',
   'https://feature-test-customize-page--delightful-croquembouche-cafa23.netlify.app'
@@ -33,11 +50,38 @@ app.use(cors({
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-app.get('/', (req, res) => {
-  res.send('✅ TrekAI server is running');
+// Health check endpoint for database connectivity
+app.get('/api/health', async (req, res) => {
+  try {
+    // Check database connection
+    const mongoose = require('mongoose');
+    if (mongoose.connection.readyState === 1) {
+      res.json({ 
+        status: 'ok',
+        message: 'API is running, database connected',
+        dbState: 'connected'
+      });
+    } else {
+      res.status(503).json({ 
+        status: 'error',
+        message: 'Database connection issue',
+        dbState: ['disconnected', 'connecting', 'disconnecting', 'uninitialized'][mongoose.connection.readyState] 
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
 });
 
-// Enhanced normalizer function for rich content
+app.get('/', (req, res) => {
+  res.send('✅ TrekAI server is running with MongoDB integration');
+});
+
+// Import and use itineraries routes
+const itinerariesRoutes = require('./routes/itineraries');
+app.use('/api/itineraries', itinerariesRoutes);
+
+// Function to enhance itinerary output
 function enhancedNormalizeOutput(gptResponse) {
   let output = gptResponse;
 
@@ -137,8 +181,9 @@ function enhancedNormalizeOutput(gptResponse) {
   return processedOutput;
 }
 
+// Enhanced /api/start endpoint with userId support
 app.post('/api/start', async (req, res) => {
-  const { location } = req.body;
+  const { location, userId } = req.body;
   if (!location) return res.status(400).json({ error: 'Location is required.' });
 
   try {
@@ -158,15 +203,16 @@ app.post('/api/start', async (req, res) => {
     });
 
     const reply = completion.choices?.[0]?.message?.content?.trim();
-    res.json({ reply });
+    res.json({ reply, userId });
   } catch (error) {
     console.error('❌ Error in /api/start:', error);
     res.status(500).send('Failed to generate intro response.');
   }
 });
 
+// Enhanced /api/finalize endpoint with MongoDB integration
 app.post('/api/finalize', async (req, res) => {
-  const { location, filters, comments } = req.body;
+  const { location, filters, comments, userId, title } = req.body;
 
   if (!location || !filters) {
     return res.status(400).json({ error: 'Location and filters are required.' });
@@ -297,23 +343,52 @@ Please generate the full itinerary with proper formatting for each day, plus the
           `.trim()
         }
       ],
-      temperature: 0.7, // Slightly lower temperature for more consistent outputs
-      max_tokens: 3000  // Increased token limit for more detailed content
+      temperature: 0.7,
+      max_tokens: 3000
     });
 
     const reply = completion.choices?.[0]?.message?.content?.trim();
-
-    // Normalize the output before sending it to the client
     const normalizedReply = enhancedNormalizeOutput(reply);
-
-    // Log both original and normalized replies for debugging
-    console.log('\n📦 Original GPT Reply:\n', reply);
-    console.log('\n📦 Enhanced Normalized GPT Reply:\n', normalizedReply);
 
     if (!normalizedReply) return res.status(500).json({ error: 'No response from OpenAI' });
     
-    // Save itinerary to MongoDB if user is authenticated (to be implemented later)
+    // Save itinerary to MongoDB if userId is provided
+    if (userId) {
+      try {
+        const Itinerary = require('./models/Itinerary');
+        
+        const newItinerary = new Itinerary({
+          user: userId,
+          title: title || `${location} Trek`,
+          location,
+          filters,
+          comments,
+          content: normalizedReply,
+          createdAt: Date.now(),
+          lastViewed: Date.now()
+        });
+        
+        const savedItinerary = await newItinerary.save();
+        console.log(`✅ Itinerary saved to database with ID: ${savedItinerary._id}`);
+        
+        // Return both the content and the saved itinerary with ID
+        return res.json({ 
+          reply: normalizedReply,
+          itineraryId: savedItinerary._id,
+          message: 'Itinerary saved to database'
+        });
+      } catch (dbError) {
+        console.error('❌ Error saving to database:', dbError);
+        // Still return the content even if database save fails
+        return res.json({ 
+          reply: normalizedReply,
+          error: 'Failed to save to database',
+          message: 'Generated itinerary but failed to save to database'
+        });
+      }
+    }
     
+    // If no userId, just return the generated content
     res.json({ reply: normalizedReply });
   } catch (error) {
     console.error('❌ Error in /api/finalize:', error.response?.data || error.message);

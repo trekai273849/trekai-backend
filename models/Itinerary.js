@@ -1,4 +1,3 @@
-cat > models/Itinerary.js << 'EOF'
 // models/Itinerary.js
 const mongoose = require('mongoose');
 
@@ -43,4 +42,3 @@ const ItinerarySchema = new mongoose.Schema({
 });
 
 module.exports = mongoose.model('Itinerary', ItinerarySchema);
-EOF
