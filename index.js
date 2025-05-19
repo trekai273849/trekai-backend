@@ -3,9 +3,16 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const OpenAI = require('openai');
+const mongoose = require('mongoose'); // Add mongoose
+const connectDB = require('./config/database'); // Add database connection
 
 const app = express();
 app.use(express.json());
+
+// Connect to MongoDB
+connectDB()
+  .then(() => console.log('📊 MongoDB connected successfully'))
+  .catch(err => console.error('❌ MongoDB connection error:', err));
 
 const allowedOrigins = [
   'https://smarttrails.pro',  // Make sure your production domain is here
@@ -304,6 +311,9 @@ Please generate the full itinerary with proper formatting for each day, plus the
     console.log('\n📦 Enhanced Normalized GPT Reply:\n', normalizedReply);
 
     if (!normalizedReply) return res.status(500).json({ error: 'No response from OpenAI' });
+    
+    // Save itinerary to MongoDB if user is authenticated (to be implemented later)
+    
     res.json({ reply: normalizedReply });
   } catch (error) {
     console.error('❌ Error in /api/finalize:', error.response?.data || error.message);
