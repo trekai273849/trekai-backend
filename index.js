@@ -43,26 +43,21 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:8080',      
   'http://127.0.0.1:8080',      
-  'http://192.168.0.9:8080',    
-  'https://feature-test-customize-page--delightful-croquembouche-cafa23.netlify.app',
-  'https://feature-test-user-profiles--delightful-croquembouche-cafa23.netlify.app'
+  'http://192.168.0.9:8080'
 ];
 
-// Enable CORS preflight requests
-app.options('*', cors());
-
-// More permissive CORS configuration
+// Production-ready CORS configuration
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, Postman)
+    // Allow requests with no origin (like mobile apps, cURL)
     if (!origin) return callback(null, true);
     
-    // Allow specified origins
+    // Allow specific origins
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
     
-    // Allow any Netlify preview domain for your site
+    // Allow all Netlify preview domains for your site
     if (origin && origin.includes('delightful-croquembouche-cafa23.netlify.app')) {
       return callback(null, true);
     }
@@ -73,6 +68,9 @@ app.use(cors({
   credentials: true, // Allow cookies and authentication headers
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] // Include OPTIONS for preflight
 }));
+
+// Handle OPTIONS preflight requests explicitly
+app.options('*', cors());
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
