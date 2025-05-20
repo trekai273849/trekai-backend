@@ -34,6 +34,11 @@ const UserSchema = new mongoose.Schema({
       enum: ['free', 'premium'],
       default: 'free'
     },
+    billingInterval: {
+      type: String,
+      enum: ['month', 'year'],
+      default: 'month'
+    },
     startDate: Date,
     endDate: Date,
     stripeCustomerId: String,

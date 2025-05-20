@@ -21,6 +21,7 @@
     "form-data-encoder": "^4.0.2",
     "mongodb": "^6.16.0",
     "mongoose": "^8.15.0",
-    "openai": "^4.0.0"
+    "openai": "^4.0.0",
+    "stripe": "^18.1.1"
   }
 }

@@ -1,4 +1,4 @@
-// Enhanced index.js with MongoDB and Firebase integration
+// Enhanced index.js with MongoDB, Firebase, and Stripe integration
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -6,8 +6,8 @@ const OpenAI = require('openai');
 const connectDB = require('./config/database');
 const path = require('path');
 const fs = require('fs');
-const cookieParser = require('cookie-parser'); // Add cookie parser
-const { verifyToken } = require('./middleware/auth'); // Add auth middleware
+const cookieParser = require('cookie-parser'); 
+const { verifyToken } = require('./middleware/auth');
 
 // Initialize Firebase
 require('./config/firebase-config');
@@ -18,16 +18,19 @@ if (!fs.existsSync(routesDir)) {
   fs.mkdirSync(routesDir);
 }
 
-// Create the itineraries routes file if it doesn't exist
-const itinerariesRoutePath = path.join(routesDir, 'itineraries.js');
-if (!fs.existsSync(itinerariesRoutePath)) {
-  // You'll need to create this file using the code provided earlier
-  console.log('Please create the routes/itineraries.js file using the provided code');
-}
-
 const app = express();
+
+// Special handling for Stripe webhook - MUST be before express.json middleware
+app.post('/api/subscriptions/webhook', express.raw({type: 'application/json'}), (req, res) => {
+  const subscriptionRoutes = require('./routes/subscriptions');
+  return subscriptionRoutes.handleWebhook ? 
+    subscriptionRoutes.handleWebhook(req, res) : 
+    res.status(501).json({ error: 'Webhook handler not properly implemented' });
+});
+
+// Regular middleware
 app.use(express.json());
-app.use(cookieParser()); // Add cookie parser middleware
+app.use(cookieParser());
 
 // Database connection with better error handling
 connectDB()
@@ -98,16 +101,18 @@ app.get('/api/health', async (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.send('✅ TrekAI server is running with MongoDB and Firebase integration');
+  res.send('✅ TrekAI server is running with MongoDB, Firebase, and Stripe integration');
 });
 
 // Import routes
 const itinerariesRoutes = require('./routes/itineraries');
-const userRoutes = require('./routes/users'); // Add user routes
+const userRoutes = require('./routes/users');
+const subscriptionRoutes = require('./routes/subscriptions'); // Add subscription routes
 
 // Use routes with authentication middleware
-app.use('/api/users', userRoutes); // Add user routes
-app.use('/api/itineraries', verifyToken, itinerariesRoutes); // Add auth middleware to itineraries routes
+app.use('/api/users', userRoutes);
+app.use('/api/itineraries', verifyToken, itinerariesRoutes);
+app.use('/api/subscriptions', subscriptionRoutes); // Register subscription routes
 
 // Function to enhance itinerary output
 function enhancedNormalizeOutput(gptResponse) {
