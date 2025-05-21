@@ -1,6 +1,7 @@
 // middleware/auth.js
 const admin = require('../config/firebase-config');
 const User = require('../models/User');
+const mongoose = require('mongoose');
 
 /**
  * Middleware to verify Firebase token and attach user to the request
@@ -16,52 +17,79 @@ exports.verifyToken = async (req, res, next) => {
     const idToken = authHeader.split('Bearer ')[1];
     
     // Verify the token
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
-    
-    if (!decodedToken) {
-      return res.status(401).json({ error: 'Unauthorized - Invalid token' });
-    }
-    
-    // Check if the user exists in our database
-    let user = await User.findOne({ firebaseUid: decodedToken.uid });
-    
-    // If user doesn't exist, create a new one
-    if (!user) {
-      // Get user details from Firebase
-      const firebaseUser = await admin.auth().getUser(decodedToken.uid);
+    try {
+      const decodedToken = await admin.auth().verifyIdToken(idToken);
       
-      user = new User({
-        firebaseUid: decodedToken.uid,
-        email: firebaseUser.email || decodedToken.email,
-        firstName: firebaseUser.displayName ? firebaseUser.displayName.split(' ')[0] : '',
-        lastName: firebaseUser.displayName ? firebaseUser.displayName.split(' ').slice(1).join(' ') : '',
-        subscription: {
-          status: 'free',
-          startDate: new Date(),
-        },
-        createdAt: new Date(),
-        lastLogin: new Date()
+      if (!decodedToken) {
+        return res.status(401).json({ error: 'Unauthorized - Invalid token' });
+      }
+      
+      // Check MongoDB connection before accessing database
+      if (mongoose.connection.readyState !== 1) {
+        // If database is not connected, still allow the user to access API
+        // by setting basic user information from the token
+        req.user = {
+          uid: decodedToken.uid,
+          email: decodedToken.email,
+          userId: decodedToken.uid, // Use Firebase UID as fallback
+          subscription: 'free'      // Default to free tier
+        };
+        
+        console.warn(`Auth middleware - DB unavailable, using token data for user ${decodedToken.email}`);
+        return next();
+      }
+      
+      // If MongoDB is connected, proceed with normal flow
+      // Check if the user exists in our database
+      let user = await User.findOne({ firebaseUid: decodedToken.uid });
+      
+      // If user doesn't exist, create a new one
+      if (!user) {
+        // Get user details from Firebase
+        const firebaseUser = await admin.auth().getUser(decodedToken.uid);
+        
+        user = new User({
+          firebaseUid: decodedToken.uid,
+          email: firebaseUser.email || decodedToken.email,
+          firstName: firebaseUser.displayName ? firebaseUser.displayName.split(' ')[0] : '',
+          lastName: firebaseUser.displayName ? firebaseUser.displayName.split(' ').slice(1).join(' ') : '',
+          subscription: {
+            status: 'free',
+            startDate: new Date(),
+          },
+          createdAt: new Date(),
+          lastLogin: new Date()
+        });
+        
+        await user.save();
+      } else {
+        // Update last login
+        user.lastLogin = new Date();
+        await user.save();
+      }
+      
+      // Attach user info to the request object
+      req.user = {
+        uid: decodedToken.uid,
+        email: decodedToken.email,
+        userId: user._id,
+        subscription: user.subscription.status
+      };
+      
+      next();
+    } catch (tokenError) {
+      console.error('Token verification error:', tokenError);
+      return res.status(401).json({ 
+        error: 'Unauthorized - Token verification failed', 
+        message: tokenError.message 
       });
-      
-      await user.save();
-    } else {
-      // Update last login
-      user.lastLogin = new Date();
-      await user.save();
     }
-    
-    // Attach user info to the request object
-    req.user = {
-      uid: decodedToken.uid,
-      email: decodedToken.email,
-      userId: user._id,
-      subscription: user.subscription.status
-    };
-    
-    next();
   } catch (error) {
     console.error('Auth Middleware Error:', error);
-    return res.status(401).json({ error: 'Unauthorized - Token verification failed' });
+    return res.status(401).json({ 
+      error: 'Unauthorized - Token verification failed',
+      message: error.message
+    });
   }
 };
 

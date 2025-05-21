@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const cookieParser = require('cookie-parser'); 
 const { verifyToken } = require('./middleware/auth');
+const mongoose = require('mongoose'); // Add this import
 
 // Initialize Firebase
 require('./config/firebase-config');
@@ -34,10 +35,17 @@ app.use(cookieParser());
 
 // Database connection with better error handling
 connectDB()
-  .then(() => console.log('📊 MongoDB connected successfully'))
+  .then(connection => {
+    if (connection) {
+      console.log('📊 MongoDB connected successfully');
+    } else {
+      console.log('⚠️ Warning: Starting server without MongoDB connection');
+    }
+  })
   .catch(err => {
     console.error('❌ MongoDB connection error:', err);
-    process.exit(1); // Exit on failed connection
+    console.log('⚠️ Warning: Starting server without MongoDB connection');
+    // Don't exit - let the server start anyway
   });
 
 const allowedOrigins = [
@@ -79,27 +87,68 @@ app.options('*', cors());
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Health check endpoint for database connectivity
+// Improved Health check endpoint with better logging
 app.get('/api/health', async (req, res) => {
   try {
     // Check database connection
-    const mongoose = require('mongoose');
-    if (mongoose.connection.readyState === 1) {
+    const dbState = mongoose.connection.readyState;
+    console.log(`Health check - DB state: ${dbState}`);
+    
+    // Define state names for logging
+    const stateNames = ['disconnected', 'connected', 'connecting', 'disconnecting', 'uninitialized'];
+    
+    if (dbState === 1) {
       res.json({ 
         status: 'ok',
         message: 'API is running, database connected',
-        dbState: 'connected'
+        dbState: 'connected',
+        serverTime: new Date().toISOString()
       });
     } else {
+      console.log(`Health check - DB connection issue: ${stateNames[dbState] || 'unknown'}`);
       res.status(503).json({ 
         status: 'error',
         message: 'Database connection issue',
-        dbState: ['disconnected', 'connecting', 'disconnecting', 'uninitialized'][mongoose.connection.readyState] 
+        dbState: stateNames[dbState] || 'unknown',
+        serverTime: new Date().toISOString()
       });
     }
   } catch (error) {
-    res.status(500).json({ status: 'error', message: error.message });
+    console.error('Health check error:', error);
+    res.status(500).json({ 
+      status: 'error', 
+      message: error.message,
+      stack: process.env.NODE_ENV === 'production' ? null : error.stack,
+      serverTime: new Date().toISOString()
+    });
   }
+});
+
+// Add new debug endpoint for diagnostics
+app.get('/api/debug', (req, res) => {
+  // Send debug info
+  res.json({
+    serverTime: new Date().toISOString(),
+    nodeEnv: process.env.NODE_ENV,
+    mongodbState: {
+      connected: mongoose.connection.readyState === 1,
+      readyState: mongoose.connection.readyState,
+      stateName: ['disconnected', 'connected', 'connecting', 'disconnecting', 'uninitialized'][mongoose.connection.readyState] || 'unknown'
+    },
+    corsConfig: {
+      allowedOrigins: allowedOrigins
+    },
+    envVarsPresent: {
+      mongoUri: !!process.env.MONGODB_URI,
+      firebaseProjectId: !!process.env.FIREBASE_PROJECT_ID,
+      openaiApiKey: !!process.env.OPENAI_API_KEY
+    },
+    versions: {
+      node: process.version,
+      express: require('express/package.json').version,
+      mongoose: require('mongoose/package.json').version
+    }
+  });
 });
 
 app.get('/', (req, res) => {
@@ -398,6 +447,15 @@ Please generate the full itinerary with proper formatting for each day, plus the
     // Only attempt to save if user is authenticated
     if (userId) {
       try {
+        // Check database connection before attempting to save
+        if (mongoose.connection.readyState !== 1) {
+          return res.json({ 
+            reply: normalizedReply,
+            error: 'Database unavailable',
+            message: 'Generated itinerary but database is unavailable for saving'
+          });
+        }
+        
         const Itinerary = require('./models/Itinerary');
         
         const newItinerary = new Itinerary({

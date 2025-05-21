@@ -2,10 +2,19 @@
 const express = require('express');
 const router = express.Router();
 const Itinerary = require('../models/Itinerary');
+const mongoose = require('mongoose');
 
 // Get all itineraries for a user
 router.get('/', async (req, res) => {
   try {
+    // Check if database is connected before proceeding
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ 
+        error: 'Database connection unavailable',
+        message: 'The database is currently unavailable. Please try again later.'
+      });
+    }
+    
     // Now getting userId from auth middleware
     const userId = req.user.userId;
     
@@ -15,13 +24,21 @@ router.get('/', async (req, res) => {
     res.json(itineraries);
   } catch (error) {
     console.error('Error fetching itineraries:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', message: error.message });
   }
 });
 
 // Get a single itinerary by ID
 router.get('/:id', async (req, res) => {
   try {
+    // Check if database is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ 
+        error: 'Database connection unavailable',
+        message: 'The database is currently unavailable. Please try again later.'
+      });
+    }
+    
     const itinerary = await Itinerary.findById(req.params.id);
     
     if (!itinerary) {
@@ -40,13 +57,21 @@ router.get('/:id', async (req, res) => {
     res.json(itinerary);
   } catch (error) {
     console.error('Error fetching itinerary:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', message: error.message });
   }
 });
 
 // Save a new itinerary
 router.post('/', async (req, res) => {
   try {
+    // Check if database is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ 
+        error: 'Database connection unavailable',
+        message: 'The database is currently unavailable. Please try again later.'
+      });
+    }
+    
     const { title, location, filters, comments, content } = req.body;
     
     if (!title || !location || !content) {
@@ -66,13 +91,21 @@ router.post('/', async (req, res) => {
     res.status(201).json(savedItinerary);
   } catch (error) {
     console.error('Error saving itinerary:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', message: error.message });
   }
 });
 
 // Update an itinerary
 router.put('/:id', async (req, res) => {
   try {
+    // Check if database is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ 
+        error: 'Database connection unavailable',
+        message: 'The database is currently unavailable. Please try again later.'
+      });
+    }
+    
     // First find the itinerary to check ownership
     const itinerary = await Itinerary.findById(req.params.id);
     
@@ -95,13 +128,21 @@ router.put('/:id', async (req, res) => {
     res.json(updatedItinerary);
   } catch (error) {
     console.error('Error updating itinerary:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', message: error.message });
   }
 });
 
 // Delete an itinerary
 router.delete('/:id', async (req, res) => {
   try {
+    // Check if database is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ 
+        error: 'Database connection unavailable',
+        message: 'The database is currently unavailable. Please try again later.'
+      });
+    }
+    
     // First find the itinerary to check ownership
     const itinerary = await Itinerary.findById(req.params.id);
     
@@ -119,7 +160,7 @@ router.delete('/:id', async (req, res) => {
     res.json({ message: 'Itinerary deleted successfully' });
   } catch (error) {
     console.error('Error deleting itinerary:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', message: error.message });
   }
 });
 
