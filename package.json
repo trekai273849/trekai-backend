@@ -19,6 +19,7 @@
     "express-session": "^1.18.1",
     "firebase-admin": "^13.4.0",
     "form-data-encoder": "^4.0.2",
+    "http-proxy-middleware": "^3.0.5",
     "mongodb": "^6.16.0",
     "mongoose": "^8.15.0",
     "openai": "^4.0.0",

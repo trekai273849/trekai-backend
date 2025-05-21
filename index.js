@@ -46,7 +46,9 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:8080',      
   'http://127.0.0.1:8080',      
-  'http://192.168.0.9:8080'
+  'http://192.168.0.9:8080',
+  'https://feature-test-user-profiles--delightful-croquembouche-cafa23.netlify.app',
+  'https://feature-test-user-profiles--delightful-croquembouche-cafa23.netlify.app'
 ];
 
 // Production-ready CORS configuration
