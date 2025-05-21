@@ -21,15 +21,7 @@ if (!fs.existsSync(routesDir)) {
 
 const app = express();
 
-// Special handling for Stripe webhook - MUST be before express.json middleware
-app.post('/api/subscriptions/webhook', express.raw({type: 'application/json'}), (req, res) => {
-  const subscriptionRoutes = require('./routes/subscriptions');
-  return subscriptionRoutes.handleWebhook ? 
-    subscriptionRoutes.handleWebhook(req, res) : 
-    res.status(501).json({ error: 'Webhook handler not properly implemented' });
-});
-
-// Regular middleware
+// Regular middleware (webhook is now handled in subscriptions router)
 app.use(express.json());
 app.use(cookieParser());
 
@@ -163,7 +155,7 @@ const subscriptionRoutes = require('./routes/subscriptions'); // Add subscriptio
 // Use routes with authentication middleware
 app.use('/api/users', userRoutes);
 app.use('/api/itineraries', verifyToken, itinerariesRoutes);
-app.use('/api/subscriptions', subscriptionRoutes); // Register subscription routes
+app.use('/api/subscriptions', subscriptionRoutes); // Register subscription routes (includes webhook)
 
 // Function to enhance itinerary output
 function enhancedNormalizeOutput(gptResponse) {
