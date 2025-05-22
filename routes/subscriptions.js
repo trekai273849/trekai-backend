@@ -135,109 +135,116 @@ router.post('/create-checkout-session', verifyToken, async (req, res) => {
 
 /**
  * @route POST /api/subscriptions/webhook
- * @desc Webhook handler for Stripe events
+ * @desc Webhook handler for Stripe events - handles its own raw body parsing
  * @access Public (secured by Stripe signature verification)
- * @note Raw body parsing is handled by middleware in index.js
  */
-router.post('/webhook', async (req, res) => {
-  const sig = req.headers['stripe-signature'];
-  let event;
-  
-  try {
-    event = stripe.webhooks.constructEvent(
-      req.body,
-      sig,
-      process.env.STRIPE_WEBHOOK_SECRET
-    );
-  } catch (err) {
-    console.error(`Webhook Error: ${err.message}`);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
-  }
-  
-  // Handle the event
-  try {
-    let subscription;
-    let status;
-    let billingInterval;
-    
-    switch (event.type) {
-      case 'checkout.session.completed':
-        const session = event.data.object;
+router.post('/webhook', (req, res, next) => {
+  // Only apply raw body parsing for this specific route
+  if (req.get('Content-Type') === 'application/json' && req.get('stripe-signature')) {
+    express.raw({ type: 'application/json' })(req, res, async () => {
+      const sig = req.headers['stripe-signature'];
+      let event;
+      
+      try {
+        event = stripe.webhooks.constructEvent(
+          req.body,
+          sig,
+          process.env.STRIPE_WEBHOOK_SECRET
+        );
+      } catch (err) {
+        console.error(`Webhook Error: ${err.message}`);
+        return res.status(400).send(`Webhook Error: ${err.message}`);
+      }
+      
+      // Handle the event
+      try {
+        let subscription;
+        let status;
+        let billingInterval;
         
-        if (session.mode !== 'subscription') {
-          return res.json({ received: true, message: 'Non-subscription session, ignoring' });
-        }
-        
-        // Retrieve the subscription details from the session
-        subscription = await stripe.subscriptions.retrieve(session.subscription);
-        
-        // Get billing interval from the subscription items
-        billingInterval = subscription.items.data[0].plan.interval;
-        
-        // Update database using metadata from the session
-        await User.findByIdAndUpdate(session.metadata.userId, { 
-          $set: { 
-            'subscription.status': 'premium',
-            'subscription.stripeSubscriptionId': subscription.id,
-            'subscription.billingInterval': billingInterval,
-            'subscription.startDate': new Date(subscription.current_period_start * 1000),
-            'subscription.endDate': new Date(subscription.current_period_end * 1000)
-          } 
-        });
-        
-        break;
-        
-      case 'customer.subscription.updated':
-        subscription = event.data.object;
-        
-        // Check if there's an active/trialing subscription
-        status = subscription.status === 'active' || subscription.status === 'trialing' 
-          ? 'premium' 
-          : 'free';
-        
-        // Get billing interval
-        billingInterval = subscription.items.data[0].plan.interval;
-        
-        // Find user by subscription ID
-        const updatedUser = await User.findOne({ 'subscription.stripeSubscriptionId': subscription.id });
-        
-        if (updatedUser) {
-          await User.findByIdAndUpdate(updatedUser._id, { 
-            $set: { 
-              'subscription.status': status,
-              'subscription.billingInterval': billingInterval,
-              'subscription.endDate': new Date(subscription.current_period_end * 1000)
-            } 
-          });
-        }
-        
-        break;
-        
-      case 'customer.subscription.deleted':
-        subscription = event.data.object;
-        
-        // Find user by subscription ID
-        const userToUpdate = await User.findOne({ 'subscription.stripeSubscriptionId': subscription.id });
-        
-        if (userToUpdate) {
-          await User.findByIdAndUpdate(userToUpdate._id, { 
-            $set: { 
-              'subscription.status': 'free',
-              'subscription.endDate': new Date()
-            },
-            $unset: {
-              'subscription.stripeSubscriptionId': 1
+        switch (event.type) {
+          case 'checkout.session.completed':
+            const session = event.data.object;
+            
+            if (session.mode !== 'subscription') {
+              return res.json({ received: true, message: 'Non-subscription session, ignoring' });
             }
-          });
+            
+            // Retrieve the subscription details from the session
+            subscription = await stripe.subscriptions.retrieve(session.subscription);
+            
+            // Get billing interval from the subscription items
+            billingInterval = subscription.items.data[0].plan.interval;
+            
+            // Update database using metadata from the session
+            await User.findByIdAndUpdate(session.metadata.userId, { 
+              $set: { 
+                'subscription.status': 'premium',
+                'subscription.stripeSubscriptionId': subscription.id,
+                'subscription.billingInterval': billingInterval,
+                'subscription.startDate': new Date(subscription.current_period_start * 1000),
+                'subscription.endDate': new Date(subscription.current_period_end * 1000)
+              } 
+            });
+            
+            break;
+            
+          case 'customer.subscription.updated':
+            subscription = event.data.object;
+            
+            // Check if there's an active/trialing subscription
+            status = subscription.status === 'active' || subscription.status === 'trialing' 
+              ? 'premium' 
+              : 'free';
+            
+            // Get billing interval
+            billingInterval = subscription.items.data[0].plan.interval;
+            
+            // Find user by subscription ID
+            const updatedUser = await User.findOne({ 'subscription.stripeSubscriptionId': subscription.id });
+            
+            if (updatedUser) {
+              await User.findByIdAndUpdate(updatedUser._id, { 
+                $set: { 
+                  'subscription.status': status,
+                  'subscription.billingInterval': billingInterval,
+                  'subscription.endDate': new Date(subscription.current_period_end * 1000)
+                } 
+              });
+            }
+            
+            break;
+            
+          case 'customer.subscription.deleted':
+            subscription = event.data.object;
+            
+            // Find user by subscription ID
+            const userToUpdate = await User.findOne({ 'subscription.stripeSubscriptionId': subscription.id });
+            
+            if (userToUpdate) {
+              await User.findByIdAndUpdate(userToUpdate._id, { 
+                $set: { 
+                  'subscription.status': 'free',
+                  'subscription.endDate': new Date()
+                },
+                $unset: {
+                  'subscription.stripeSubscriptionId': 1
+                }
+              });
+            }
+            
+            break;
         }
         
-        break;
-    }
-    
-    res.json({ received: true });
-  } catch (error) {
-    console.error('Error processing webhook:', error);
-    res.status(500).json({ error: 'Failed to process webhook' });
+        res.json({ received: true });
+      } catch (error) {
+        console.error('Error processing webhook:', error);
+        res.status(500).json({ error: 'Failed to process webhook' });
+      }
+    });
+  } else {
+    // Not a webhook request, pass to next middleware
+    next();
   }
 });
 

@@ -32,11 +32,7 @@ const app = express();
 
 console.log('📝 Setting up middleware...');
 
-// CRITICAL: Webhook middleware MUST come before express.json()
-// This handles Stripe webhook with raw body parsing
-app.use('/api/subscriptions/webhook', express.raw({ type: 'application/json' }));
-
-// Regular middleware (after webhook route)
+// Regular middleware setup - NO webhook middleware here
 app.use(express.json());
 app.use(cookieParser());
 
@@ -180,7 +176,11 @@ console.log('✅ All route files loaded');
 console.log('📍 Registering routes...');
 app.use('/api/users', userRoutes);
 app.use('/api/itineraries', verifyToken, itinerariesRoutes);
+
+// Special handling for subscription routes with webhook
+console.log('📍 Registering subscription routes with webhook handling...');
 app.use('/api/subscriptions', subscriptionRoutes);
+
 console.log('✅ All routes registered');
 
 // Function to enhance itinerary output
