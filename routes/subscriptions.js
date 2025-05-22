@@ -137,8 +137,9 @@ router.post('/create-checkout-session', verifyToken, async (req, res) => {
  * @route POST /api/subscriptions/webhook
  * @desc Webhook handler for Stripe events
  * @access Public (secured by Stripe signature verification)
+ * @note Raw body parsing is handled by middleware in index.js
  */
-router.post('/webhook', express.raw({type: 'application/json'}), async (req, res) => {
+router.post('/webhook', async (req, res) => {
   const sig = req.headers['stripe-signature'];
   let event;
   

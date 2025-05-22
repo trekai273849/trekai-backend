@@ -21,7 +21,11 @@ if (!fs.existsSync(routesDir)) {
 
 const app = express();
 
-// Regular middleware (webhook is now handled in subscriptions router)
+// IMPORTANT: Webhook middleware MUST come before express.json()
+// This handles Stripe webhook with raw body parsing
+app.use('/api/subscriptions/webhook', express.raw({ type: 'application/json' }));
+
+// Regular middleware (after webhook route)
 app.use(express.json());
 app.use(cookieParser());
 
@@ -147,15 +151,44 @@ app.get('/', (req, res) => {
   res.send('✅ TrekAI server is running with MongoDB, Firebase, and Stripe integration');
 });
 
-// Import routes
-const itinerariesRoutes = require('./routes/itineraries');
-const userRoutes = require('./routes/users');
-const subscriptionRoutes = require('./routes/subscriptions'); // Add subscription routes
+// Import routes with debugging
+console.log('🔍 Starting route registration...');
+
+let itinerariesRoutes, userRoutes, subscriptionRoutes;
+
+try {
+  console.log('📍 Loading itineraries routes...');
+  itinerariesRoutes = require('./routes/itineraries');
+  console.log('✅ Itineraries routes loaded');
+} catch (error) {
+  console.error('❌ Error loading itineraries routes:', error);
+  throw error;
+}
+
+try {
+  console.log('📍 Loading user routes...');
+  userRoutes = require('./routes/users');
+  console.log('✅ User routes loaded');
+} catch (error) {
+  console.error('❌ Error loading user routes:', error);
+  throw error;
+}
+
+try {
+  console.log('📍 Loading subscription routes...');
+  subscriptionRoutes = require('./routes/subscriptions');
+  console.log('✅ Subscription routes loaded');
+} catch (error) {
+  console.error('❌ Error loading subscription routes:', error);
+  throw error;
+}
 
 // Use routes with authentication middleware
+console.log('📍 Registering routes...');
 app.use('/api/users', userRoutes);
 app.use('/api/itineraries', verifyToken, itinerariesRoutes);
 app.use('/api/subscriptions', subscriptionRoutes); // Register subscription routes (includes webhook)
+console.log('✅ All routes registered successfully');
 
 // Function to enhance itinerary output
 function enhancedNormalizeOutput(gptResponse) {
