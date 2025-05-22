@@ -7,7 +7,7 @@ const connectDB = require('./config/database');
 const path = require('path');
 const fs = require('fs');
 const cookieParser = require('cookie-parser'); 
-const { verifyToken } = require('./middleware/auth');
+const { verifyToken, optionalAuth } = require('./middleware/auth'); // ✅ Import optionalAuth
 const mongoose = require('mongoose');
 
 console.log('🚀 Starting TrekAI server...');
@@ -217,7 +217,8 @@ app.post('/api/start', verifyToken, async (req, res) => {
   }
 });
 
-app.post('/api/finalize', async (req, res) => {
+// ✅ FIX: Add optionalAuth middleware to /api/finalize route
+app.post('/api/finalize', optionalAuth, async (req, res) => {
   const userId = req.user?.userId;
   const { location, filters, comments, title } = req.body;
 
