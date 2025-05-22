@@ -107,7 +107,7 @@ router.delete('/account', verifyToken, async (req, res) => {
   }
 });
 
-// Add to routes/users.js
+// Test route
 router.get('/test', verifyToken, (req, res) => {
   res.json({
     message: 'Authentication successful',
