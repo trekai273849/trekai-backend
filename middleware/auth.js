@@ -94,6 +94,89 @@ exports.verifyToken = async (req, res, next) => {
 };
 
 /**
+ * Optional authentication middleware - allows both authenticated and unauthenticated users
+ */
+exports.optionalAuth = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    
+    // If no auth header, continue without user
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      req.user = null;
+      return next();
+    }
+    
+    const idToken = authHeader.split('Bearer ')[1];
+    
+    try {
+      const decodedToken = await admin.auth().verifyIdToken(idToken);
+      
+      if (!decodedToken) {
+        req.user = null;
+        return next();
+      }
+      
+      // Check MongoDB connection
+      if (mongoose.connection.readyState !== 1) {
+        req.user = {
+          uid: decodedToken.uid,
+          email: decodedToken.email,
+          userId: decodedToken.uid,
+          subscription: 'free'
+        };
+        console.warn(`Optional auth middleware - DB unavailable, using token data for user ${decodedToken.email}`);
+        return next();
+      }
+      
+      // Find or create user in database
+      let user = await User.findOne({ firebaseUid: decodedToken.uid });
+      
+      if (!user) {
+        const firebaseUser = await admin.auth().getUser(decodedToken.uid);
+        
+        user = new User({
+          firebaseUid: decodedToken.uid,
+          email: firebaseUser.email || decodedToken.email,
+          firstName: firebaseUser.displayName ? firebaseUser.displayName.split(' ')[0] : '',
+          lastName: firebaseUser.displayName ? firebaseUser.displayName.split(' ').slice(1).join(' ') : '',
+          subscription: {
+            status: 'free',
+            startDate: new Date(),
+          },
+          createdAt: new Date(),
+          lastLogin: new Date()
+        });
+        
+        await user.save();
+      } else {
+        user.lastLogin = new Date();
+        await user.save();
+      }
+      
+      // Set user info
+      req.user = {
+        uid: decodedToken.uid,
+        email: decodedToken.email,
+        userId: user._id,
+        subscription: user.subscription.status
+      };
+      
+      next();
+    } catch (tokenError) {
+      console.error('Optional auth - token verification failed:', tokenError);
+      // Continue without authentication instead of failing
+      req.user = null;
+      next();
+    }
+  } catch (error) {
+    console.error('Optional Auth Middleware Error:', error);
+    // Continue without authentication
+    req.user = null;
+    next();
+  }
+};
+
+/**
  * Middleware to check for premium subscription
  */
 exports.checkPremium = (req, res, next) => {
