@@ -1,52 +1,178 @@
-// ✅ COMPLETE ENHANCED index.js — With rich content generation
+// Express 5.x compatible index.js
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const OpenAI = require('openai');
+const connectDB = require('./config/database');
+const path = require('path');
+const fs = require('fs');
+const cookieParser = require('cookie-parser'); 
+const { verifyToken, optionalAuth } = require('./middleware/auth'); // ✅ Import optionalAuth
+const mongoose = require('mongoose');
+
+console.log('🚀 Starting TrekAI server...');
+
+// Initialize Firebase
+try {
+  console.log('🔥 Loading Firebase config...');
+  require('./config/firebase-config');
+  console.log('✅ Firebase config loaded');
+} catch (error) {
+  console.error('❌ Firebase config error:', error);
+  throw error;
+}
 
 const app = express();
-app.use(express.json());
 
+console.log('📝 Setting up middleware...');
+
+// Basic middleware - Express 5.x compatible
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(cookieParser());
+
+console.log('✅ Basic middleware configured');
+
+// Database connection
+connectDB()
+  .then(connection => {
+    if (connection) {
+      console.log('📊 MongoDB connected successfully');
+    } else {
+      console.log('⚠️ Warning: Starting server without MongoDB connection');
+    }
+  })
+  .catch(err => {
+    console.error('❌ MongoDB connection error:', err);
+    console.log('⚠️ Warning: Starting server without MongoDB connection');
+  });
+
+// Simplified CORS - Express 5.x compatible
 const allowedOrigins = [
-  'https://smarttrails.pro',  // Make sure your production domain is here
+  'https://smarttrails.pro',
   'https://www.smarttrails.pro',
   'http://localhost:3000',
-  'https://feature-test-customize-page--delightful-croquembouche-cafa23.netlify.app'
+  'http://localhost:8080',      
+  'http://127.0.0.1:8080',      
+  'http://192.168.0.9:8080'
 ];
 
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+// Express 5.x compatible CORS setup
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  
+  // Allow requests with no origin (mobile apps, Postman, etc.)
+  if (!origin) {
+    res.header('Access-Control-Allow-Origin', '*');
+  } else {
+    // Check allowed origins or Netlify preview domains
+    if (allowedOrigins.includes(origin) || 
+        (origin && origin.includes('delightful-croquembouche-cafa23.netlify.app'))) {
+      res.header('Access-Control-Allow-Origin', origin);
     }
   }
-}));
+  
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin,X-Requested-With,Content-Type,Accept,Authorization,Cache-Control');
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  
+  next();
+});
+
+console.log('✅ CORS configured');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// Basic routes
 app.get('/', (req, res) => {
-  res.send('✅ TrekAI server is running');
+  res.send('✅ TrekAI server is running with MongoDB, Firebase, and Stripe integration');
 });
 
-// Enhanced normalizer function for rich content
+app.get('/api/health', async (req, res) => {
+  try {
+    const dbState = mongoose.connection.readyState;
+    const stateNames = ['disconnected', 'connected', 'connecting', 'disconnecting', 'uninitialized'];
+    
+    if (dbState === 1) {
+      res.json({ 
+        status: 'ok',
+        message: 'API is running, database connected',
+        dbState: 'connected',
+        serverTime: new Date().toISOString()
+      });
+    } else {
+      res.status(503).json({ 
+        status: 'error',
+        message: 'Database connection issue',
+        dbState: stateNames[dbState] || 'unknown',
+        serverTime: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    console.error('Health check error:', error);
+    res.status(500).json({ 
+      status: 'error', 
+      message: error.message,
+      serverTime: new Date().toISOString()
+    });
+  }
+});
+
+app.get('/api/debug', (req, res) => {
+  res.json({
+    serverTime: new Date().toISOString(),
+    nodeEnv: process.env.NODE_ENV,
+    expressVersion: require('express/package.json').version,
+    mongodbState: {
+      connected: mongoose.connection.readyState === 1,
+      readyState: mongoose.connection.readyState,
+      stateName: ['disconnected', 'connected', 'connecting', 'disconnecting', 'uninitialized'][mongoose.connection.readyState] || 'unknown'
+    },
+    envVarsPresent: {
+      mongoUri: !!process.env.MONGODB_URI,
+      firebaseProjectId: !!process.env.FIREBASE_PROJECT_ID,
+      openaiApiKey: !!process.env.OPENAI_API_KEY
+    }
+  });
+});
+
+console.log('✅ Basic routes configured');
+
+// Load and register routes - Express 5.x compatible way
+console.log('🔍 Loading routes...');
+
+try {
+  const userRoutes = require('./routes/users');
+  const itinerariesRoutes = require('./routes/itineraries');
+  const subscriptionRoutes = require('./routes/subscriptions');
+  
+  console.log('✅ Route files loaded');
+  
+  // Register routes with Express 5.x compatible syntax
+  app.use('/api/users', userRoutes);
+  app.use('/api/itineraries', verifyToken, itinerariesRoutes);
+  app.use('/api/subscriptions', subscriptionRoutes);
+  
+  console.log('✅ Routes registered');
+} catch (routeError) {
+  console.error('❌ Route loading error:', routeError);
+  console.log('⚠️ Some routes may not be available');
+}
+
+// Enhanced itinerary generation function
 function enhancedNormalizeOutput(gptResponse) {
   let output = gptResponse;
-
-  // Make sure day headings are properly formatted with ### prefix
   output = output.replace(/^(\s*Day\s+\d+:)/gm, '### $1');
   
-  // Make sure section headings are properly formatted
-  const sectionHeaders = [
-    'Packing List', 
-    'Local Insights', 
-    'Practical Information'
-  ];
+  const sectionHeaders = ['Packing List', 'Local Insights', 'Practical Information'];
   
   sectionHeaders.forEach(header => {
     if (!output.includes(`### ${header}`)) {
-      // Find section and add proper heading if not formatted correctly
       const headerRegex = new RegExp(`(?:^|\\n)(?:\\d+\\.\\s*)?(?:${header})(?:\\s*\\:)?`, 'i');
       const headerMatch = output.match(headerRegex);
       if (headerMatch) {
@@ -55,84 +181,17 @@ function enhancedNormalizeOutput(gptResponse) {
     }
   });
 
-  // Process each day section to ensure proper field formatting
-  const dayRegex = /### Day \d+:.*?(?=### Day \d+:|### Packing List|### Local Insights|### Practical Information|$)/gs;
-  let processedOutput = output;
-  let match;
-  
-  while ((match = dayRegex.exec(output)) !== null) {
-    let daySection = match[0];
-    const dayHeaderMatch = daySection.match(/(### Day \d+:.*?)(?:\n|$)/);
-    
-    if (!dayHeaderMatch) continue;
-    
-    const dayHeader = dayHeaderMatch[0];
-    
-    // Get section content without the header
-    let dayContent = daySection.replace(dayHeader, '').trim();
-    
-    // Process each expected field if not already formatted with bullet points
-    if (!dayContent.match(/\n\s*-\s*Start:/)) {
-      // List of all possible fields in enhanced format
-      const fields = [
-        'Start', 'End', 'Distance', 'Elevation gain/loss', 'Elevation',
-        'Terrain', 'Difficulty', 'Highlights', 'Lunch', 'Accommodation',
-        'Water sources', 'Tips'
-      ];
-      
-      fields.forEach(field => {
-        const fieldRegex = new RegExp(`\\b${field.replace(/\//g, '\\/').replace(/\(/g, '\\(').replace(/\)/g, '\\)')}\\s*:\\s*([^\\n]+)`, 'i');
-        const fieldMatch = dayContent.match(fieldRegex);
-        
-        if (fieldMatch) {
-          // Replace the old format with bullet point format
-          dayContent = dayContent.replace(
-            fieldMatch[0], 
-            `\n- ${field}: ${fieldMatch[1].trim()}`
-          );
-        }
-      });
-      
-      // Replace the day section in the processed output
-      const newDaySection = dayHeader + '\n' + dayContent;
-      processedOutput = processedOutput.replace(daySection, newDaySection);
-    }
-  }
-
-  // Process detailed subsections in Packing List, Local Insights, etc.
-  const sectionRegex = /### (Packing List|Local Insights|Practical Information)\s*([\s\S]*?)(?=###|$)/g;
-  let sectionMatch;
-  
-  while ((sectionMatch = sectionRegex.exec(processedOutput)) !== null) {
-    const sectionName = sectionMatch[1];
-    let sectionContent = sectionMatch[2].trim();
-    
-    // Handle subsection headers (marked with asterisks)
-    const subsectionRegex = /\*(.*?):\*/g;
-    let formattedContent = sectionContent;
-    
-    // Format subsection headers to be bold
-    formattedContent = formattedContent.replace(subsectionRegex, '*$1:*');
-    
-    // Ensure each line in the section starts with a bullet point
-    const lines = formattedContent.split('\n').map(line => {
-      line = line.trim();
-      if (line && !line.startsWith('-') && !line.startsWith('*') && !line.startsWith('**')) {
-        return `- ${line}`;
-      }
-      return line;
-    });
-    
-    const newSectionContent = '\n' + lines.join('\n') + '\n\n';
-    processedOutput = processedOutput.replace(sectionMatch[0], `### ${sectionName}${newSectionContent}`);
-  }
-  
-  return processedOutput;
+  return output;
 }
 
-app.post('/api/start', async (req, res) => {
+// API endpoints
+app.post('/api/start', verifyToken, async (req, res) => {
   const { location } = req.body;
   if (!location) return res.status(400).json({ error: 'Location is required.' });
+
+  if (!req.user || !req.user.userId) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
 
   try {
     const completion = await openai.chat.completions.create({
@@ -151,22 +210,21 @@ app.post('/api/start', async (req, res) => {
     });
 
     const reply = completion.choices?.[0]?.message?.content?.trim();
-    res.json({ reply });
+    res.json({ reply, userId: req.user.userId });
   } catch (error) {
     console.error('❌ Error in /api/start:', error);
     res.status(500).send('Failed to generate intro response.');
   }
 });
 
-app.post('/api/finalize', async (req, res) => {
-  const { location, filters, comments } = req.body;
+// ✅ FIX: Add optionalAuth middleware to /api/finalize route
+app.post('/api/finalize', optionalAuth, async (req, res) => {
+  const userId = req.user?.userId;
+  const { location, filters, comments, title } = req.body;
 
   if (!location || !filters) {
     return res.status(400).json({ error: 'Location and filters are required.' });
   }
-
-  const dayMatch = location.match(/(\d+)\s*(day|night)/i);
-  const dayInfo = dayMatch ? `${dayMatch[1]}-day` : '';
 
   const filterSummary = `
 Location: ${location}
@@ -177,7 +235,6 @@ Technical: ${filters.technical || 'Not specified'}
 User Notes: ${comments || 'None'}
 `;
 
-  // Enhanced GPT prompt for richer trek itineraries
   const enhancedSystemPrompt = `
 You are an expert trekking guide AI specializing in creating detailed, practical itineraries with rich local knowledge.
 
@@ -203,37 +260,29 @@ Your response MUST follow this EXACT format with these enhanced sections:
 ### Packing List
 *Essentials:*
 - [item with brief explanation if needed]
-- [item]
 
 *Clothing:*
 - [specific clothing recommendations for this trek's conditions]
-- [item]
 
 *Trek-Specific Gear:*
 - [items particularly important for this region/trek]
-- [item]
 
 *Documentation:*
 - [permits, maps, or documentation needed]
-- [item]
 
 4. A comprehensive local insights section:
 ### Local Insights
 *Cultural Considerations:*
 - [specific cultural practices or etiquette for the region]
-- [insight]
 
 *Safety Information:*
 - [region-specific safety tips, wildlife awareness, weather patterns]
-- [insight]
 
 *Local Food & Specialties:*
 - [regional dishes or foods worth trying]
-- [insight]
 
 *Language Tips:*
 - [2-3 useful phrases in local language if relevant]
-- [insight]
 
 5. A practical information section:
 ### Practical Information
@@ -248,68 +297,98 @@ Your response MUST follow this EXACT format with these enhanced sections:
 
 *Emergency Contacts:*
 - [nearest medical facilities or emergency numbers]
-
-CRITICAL FORMATTING RULES:
-- Use "### Day X:" format for EVERY day header
-- Use bullet points (single hyphen) for ALL data points within each day
-- ALWAYS include ALL sections (intro, all days, packing list, local insights, practical info)
-- Use the EXACT format shown above including all field names
-- ALWAYS include all fields for every day, with specific, actionable information
-- Focus on providing SPECIFIC details rather than generic advice
-- Include regional specialties, cultural insights, and location-specific information
-- Mention actual place names, trail features, and local terminology when possible
 `;
 
   try {
     const completion = await openai.chat.completions.create({
       model: 'gpt-4',
       messages: [
-        {
-          role: 'system',
-          content: enhancedSystemPrompt
-        },
+        { role: 'system', content: enhancedSystemPrompt },
         {
           role: 'user',
-          content: `
-Here are the trek preferences:
-
-${filterSummary}
-
-If the user specifies a number of days (e.g. "6-day trek", "10 days in Nepal", etc), generate that number of individual day entries.
-
-Each day MUST follow the exact format specified, with special attention to:
-1. Providing SPECIFIC locations, landmarks, and points of interest by name
-2. Including practical details about terrain, water sources, and trail conditions
-3. Mentioning actual local food specialties and accommodation options
-4. Adding region-specific cultural and safety information
+          content: `Here are the trek preferences: ${filterSummary}
 
 For ${location}, include authentic local knowledge about the trails, culture, and environment. 
 Make this itinerary highly specific to the region rather than generic trekking advice.
 
-Please generate the full itinerary with proper formatting for each day, plus the enhanced sections.
-          `.trim()
+Please generate the full itinerary with proper formatting for each day, plus the enhanced sections.`
         }
       ],
-      temperature: 0.7, // Slightly lower temperature for more consistent outputs
-      max_tokens: 3000  // Increased token limit for more detailed content
+      temperature: 0.7,
+      max_tokens: 3000
     });
 
     const reply = completion.choices?.[0]?.message?.content?.trim();
-
-    // Normalize the output before sending it to the client
     const normalizedReply = enhancedNormalizeOutput(reply);
 
-    // Log both original and normalized replies for debugging
-    console.log('\n📦 Original GPT Reply:\n', reply);
-    console.log('\n📦 Enhanced Normalized GPT Reply:\n', normalizedReply);
-
     if (!normalizedReply) return res.status(500).json({ error: 'No response from OpenAI' });
-    res.json({ reply: normalizedReply });
+    
+    if (userId) {
+      try {
+        if (mongoose.connection.readyState !== 1) {
+          return res.json({ 
+            reply: normalizedReply,
+            error: 'Database unavailable',
+            message: 'Generated itinerary but database is unavailable for saving'
+          });
+        }
+        
+        const Itinerary = require('./models/Itinerary');
+        
+        const newItinerary = new Itinerary({
+          user: userId,
+          title: title || `${location} Trek`,
+          location,
+          filters,
+          comments,
+          content: normalizedReply,
+          createdAt: Date.now(),
+          lastViewed: Date.now()
+        });
+        
+        const savedItinerary = await newItinerary.save();
+        
+        return res.json({ 
+          reply: normalizedReply,
+          itineraryId: savedItinerary._id,
+          message: 'Itinerary saved to database'
+        });
+      } catch (dbError) {
+        console.error('❌ Error saving to database:', dbError);
+        return res.json({ 
+          reply: normalizedReply,
+          error: 'Failed to save to database',
+          message: 'Generated itinerary but failed to save to database'
+        });
+      }
+    } else {
+      return res.json({ 
+        reply: normalizedReply,
+        isAuthenticated: false,
+        message: 'Itinerary generated but not saved (user not authenticated)'
+      });
+    }
   } catch (error) {
     console.error('❌ Error in /api/finalize:', error.response?.data || error.message);
     res.status(500).send('Failed to generate final itinerary.');
   }
 });
 
+// Error handler - Express 5.x compatible
+app.use((err, req, res, next) => {
+  console.error('Global error handler:', err);
+  
+  const statusCode = err.statusCode || err.status || 500;
+  const message = err.message || 'Internal Server Error';
+  
+  res.status(statusCode).json({
+    error: message,
+    stack: process.env.NODE_ENV === 'production' ? '🥞' : err.stack
+  });
+});
+
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🚀 TrekAI server running on port ${PORT}`);
+  console.log('✅ Express 5.x compatible server started');
+});
