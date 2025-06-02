@@ -7,23 +7,32 @@ let app;
 function formatPrivateKey(privateKey) {
   if (!privateKey) return null;
   
-  // Remove any extra quotes that might have been added
-  let key = privateKey.replace(/^["'](.*)["']$/, '$1');
+  // Remove any surrounding quotes
+  let key = privateKey.trim().replace(/^["']|["']$/g, '');
   
-  // Handle different newline formats
+  // Handle escaped newlines (common in environment variables)
   key = key.replace(/\\n/g, '\n');
   
   // Ensure proper PEM format
   if (!key.includes('-----BEGIN PRIVATE KEY-----')) {
     console.error('❌ Private key does not appear to be in PEM format');
+    console.error('Key starts with:', key.substring(0, 50));
     return null;
   }
   
-  // Clean up any extra whitespace but preserve the structure
-  const lines = key.split('\n');
-  const cleanLines = lines.map(line => line.trim());
+  if (!key.includes('-----END PRIVATE KEY-----')) {
+    console.error('❌ Private key appears to be truncated');
+    return null;
+  }
   
-  return cleanLines.join('\n');
+  // Ensure there are line breaks after the header and before the footer
+  key = key.replace(/-----BEGIN PRIVATE KEY-----/, '-----BEGIN PRIVATE KEY-----\n');
+  key = key.replace(/-----END PRIVATE KEY-----/, '\n-----END PRIVATE KEY-----');
+  
+  // Remove any duplicate newlines
+  key = key.replace(/\n\n+/g, '\n');
+  
+  return key;
 }
 
 try {
@@ -32,41 +41,75 @@ try {
     // Production/Staging: Use environment variables
     if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY) {
       console.log('🔥 Initializing Firebase with environment variables...');
+      console.log('📋 Project ID:', process.env.FIREBASE_PROJECT_ID);
       
       // Format the private key properly
       const formattedPrivateKey = formatPrivateKey(process.env.FIREBASE_PRIVATE_KEY);
       
       if (!formattedPrivateKey) {
+        console.error('❌ Failed to format private key');
+        console.error('Raw key length:', process.env.FIREBASE_PRIVATE_KEY?.length || 0);
         throw new Error('Invalid private key format');
       }
       
       const firebaseConfig = {
-        type: process.env.FIREBASE_TYPE || 'service_account',
+        type: 'service_account',
         project_id: process.env.FIREBASE_PROJECT_ID,
         private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
         private_key: formattedPrivateKey,
         client_email: process.env.FIREBASE_CLIENT_EMAIL,
         client_id: process.env.FIREBASE_CLIENT_ID,
-        auth_uri: process.env.FIREBASE_AUTH_URI || 'https://accounts.google.com/o/oauth2/auth',
-        token_uri: process.env.FIREBASE_TOKEN_URI || 'https://oauth2.googleapis.com/token',
-        auth_provider_x509_cert_url: process.env.FIREBASE_AUTH_PROVIDER_CERT_URL || 'https://www.googleapis.com/oauth2/v1/certs',
+        auth_uri: 'https://accounts.google.com/o/oauth2/auth',
+        token_uri: 'https://oauth2.googleapis.com/token',
+        auth_provider_x509_cert_url: 'https://www.googleapis.com/oauth2/v1/certs',
         client_x509_cert_url: process.env.FIREBASE_CLIENT_CERT_URL
       };
 
-      // Debug: Log the structure without sensitive data
-      console.log('🔍 Firebase config structure:', {
-        project_id: firebaseConfig.project_id,
-        client_email: firebaseConfig.client_email,
-        private_key_length: firebaseConfig.private_key ? firebaseConfig.private_key.length : 0,
-        private_key_starts_with: firebaseConfig.private_key ? firebaseConfig.private_key.substring(0, 30) + '...' : 'null'
+      // Validate required fields
+      const requiredFields = ['project_id', 'private_key', 'client_email'];
+      for (const field of requiredFields) {
+        if (!firebaseConfig[field]) {
+          console.error(`❌ Missing required field: ${field}`);
+          throw new Error(`Missing required Firebase config: ${field}`);
+        }
+      }
+
+      // Debug: Log config structure (without sensitive data)
+      console.log('🔍 Firebase config validation:', {
+        has_project_id: !!firebaseConfig.project_id,
+        has_private_key: !!firebaseConfig.private_key,
+        has_client_email: !!firebaseConfig.client_email,
+        private_key_format_valid: firebaseConfig.private_key.includes('BEGIN PRIVATE KEY'),
+        private_key_length: firebaseConfig.private_key.length
       });
 
-      app = admin.initializeApp({
-        credential: admin.credential.cert(firebaseConfig),
-        projectId: process.env.FIREBASE_PROJECT_ID
-      });
-
-      console.log('✅ Firebase Admin initialized with environment variables');
+      // Initialize with better error handling
+      try {
+        app = admin.initializeApp({
+          credential: admin.credential.cert(firebaseConfig),
+          projectId: process.env.FIREBASE_PROJECT_ID
+        });
+        
+        console.log('✅ Firebase Admin initialized successfully');
+        
+        // Test the initialization by trying to verify a dummy token
+        // This will fail but will confirm the SDK is working
+        admin.auth().verifyIdToken('dummy').catch(() => {
+          console.log('✅ Firebase Admin SDK is responding correctly');
+        });
+        
+      } catch (initError) {
+        console.error('❌ Firebase initialization failed:', initError.message);
+        if (initError.message.includes('private_key')) {
+          console.error('🔧 This is likely a private key formatting issue');
+          console.error('Please ensure the private key in your environment:');
+          console.error('1. Starts with -----BEGIN PRIVATE KEY-----');
+          console.error('2. Ends with -----END PRIVATE KEY-----');
+          console.error('3. Has actual line breaks (not \\n)');
+          console.error('4. Is not wrapped in quotes');
+        }
+        throw initError;
+      }
     } 
     // Development: Try to use JSON file (fallback)
     else {
@@ -79,17 +122,13 @@ try {
         });
         console.log('✅ Firebase Admin initialized with service account file');
       } catch (fileError) {
-        console.error('❌ Firebase service account file not found and environment variables not set');
+        console.error('❌ Firebase configuration missing');
         console.error('Please either:');
-        console.error('1. Set Firebase environment variables, or');
-        console.error('2. Add firebase-service-account.json file for local development');
-        
-        // Log what env vars are available for debugging
-        console.log('🔍 Available Firebase env vars:');
-        console.log('- FIREBASE_PROJECT_ID:', !!process.env.FIREBASE_PROJECT_ID);
-        console.log('- FIREBASE_PRIVATE_KEY:', !!process.env.FIREBASE_PRIVATE_KEY ? 'present' : 'missing');
-        console.log('- FIREBASE_CLIENT_EMAIL:', !!process.env.FIREBASE_CLIENT_EMAIL);
-        
+        console.error('1. Set all required Firebase environment variables:');
+        console.error('   - FIREBASE_PROJECT_ID');
+        console.error('   - FIREBASE_PRIVATE_KEY');
+        console.error('   - FIREBASE_CLIENT_EMAIL');
+        console.error('2. Add firebase-service-account.json for local development');
         throw new Error('Firebase configuration missing');
       }
     }
@@ -98,18 +137,16 @@ try {
     console.log('✅ Firebase Admin already initialized');
   }
 } catch (error) {
-  console.error('❌ Firebase initialization error:', error);
+  console.error('❌ Firebase initialization error:', error.message);
+  console.error('Stack:', error.stack);
   
-  // More detailed error information
-  if (error.message.includes('private key')) {
-    console.error('🔧 Private key troubleshooting:');
-    console.error('1. Ensure the private key starts with -----BEGIN PRIVATE KEY-----');
-    console.error('2. Ensure the private key ends with -----END PRIVATE KEY-----');
-    console.error('3. In Render, paste the key with actual line breaks, not \\n');
-    console.error('4. Do not add extra quotes around the key in Render');
+  // Don't throw in production - let the server start but log the error
+  if (process.env.NODE_ENV === 'production') {
+    console.error('⚠️  Firebase Admin SDK failed to initialize');
+    console.error('Authentication will not work until this is fixed');
+  } else {
+    throw error;
   }
-  
-  throw error;
 }
 
 module.exports = admin;

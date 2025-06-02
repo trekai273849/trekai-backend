@@ -162,6 +162,99 @@ router.delete('/:id', async (req, res) => {
     console.error('Error deleting itinerary:', error);
     res.status(500).json({ error: 'Server error', message: error.message });
   }
+
+// Add this route to routes/itineraries.js
+
+// Check if a trek is already saved
+router.get('/check-trek/:trekId', async (req, res) => {
+  try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ 
+        error: 'Database connection unavailable'
+      });
+    }
+    
+    const { trekId } = req.params;
+    const userId = req.user.userId;
+    
+    const existingItinerary = await Itinerary.findOne({
+      user: userId,
+      trekId: trekId,
+      type: 'popular-trek'
+    });
+    
+    res.json({
+      isSaved: !!existingItinerary,
+      itineraryId: existingItinerary?._id
+    });
+    
+  } catch (error) {
+    console.error('Error checking trek:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update the POST route to handle duplicates better
+router.post('/', async (req, res) => {
+  try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ 
+        error: 'Database connection unavailable'
+      });
+    }
+    
+    const { title, location, filters, comments, content, type, trekId, trekDetails } = req.body;
+    
+    if (!title || !location || !content) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    // Check for duplicate popular trek saves
+    if (type === 'popular-trek' && trekId) {
+      const existing = await Itinerary.findOne({
+        user: req.user.userId,
+        trekId: trekId,
+        type: 'popular-trek'
+      });
+      
+      if (existing) {
+        return res.status(409).json({ 
+          error: 'Trek already saved',
+          message: 'This trek is already in your saved trips',
+          itineraryId: existing._id
+        });
+      }
+    }
+    
+    const newItinerary = new Itinerary({
+      user: req.user.userId,
+      title,
+      location,
+      filters: filters || {},
+      comments,
+      content,
+      type: type || 'custom',
+      trekId,
+      trekDetails
+    });
+    
+    const savedItinerary = await newItinerary.save();
+    res.status(201).json(savedItinerary);
+  } catch (error) {
+    console.error('Error saving itinerary:', error);
+    
+    // Handle MongoDB duplicate key error
+    if (error.code === 11000) {
+      return res.status(409).json({ 
+        error: 'Trek already saved',
+        message: 'This trek is already in your saved trips'
+      });
+    }
+    
+    res.status(500).json({ error: 'Server error', message: error.message });
+  }
+});
+
 });
 
 module.exports = router;
