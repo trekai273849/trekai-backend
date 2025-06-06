@@ -256,20 +256,6 @@ Your response MUST follow this EXACT format with these enhanced sections:
 - Water sources: [information about water availability on trail]
 - Tips: [practical advice specific to this day's trek]
 
-3. A detailed packing list section with categories:
-### Packing List
-*Essentials:*
-- [item with brief explanation if needed]
-
-*Clothing:*
-- [specific clothing recommendations for this trek's conditions]
-
-*Trek-Specific Gear:*
-- [items particularly important for this region/trek]
-
-*Documentation:*
-- [permits, maps, or documentation needed]
-
 4. A comprehensive local insights section:
 ### Local Insights
 *Cultural Considerations:*
