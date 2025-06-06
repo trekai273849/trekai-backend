@@ -184,6 +184,158 @@ function enhancedNormalizeOutput(gptResponse) {
   return output;
 }
 
+// NEW: Add the parsing function for structured data
+function parseItineraryResponse(gptResponse) {
+  const result = {
+    content: gptResponse,
+    structured: {
+      days: [],
+      packingList: null,
+      localInsights: null,
+      practicalInfo: null
+    }
+  };
+  
+  // Parse day-by-day itinerary
+  const dayMatches = gptResponse.matchAll(/### Day (\d+): ([^\n]+)\n([\s\S]*?)(?=### Day \d+:|### Packing List|### Local Insights|### Practical Information|$)/gi);
+  
+  for (const match of dayMatches) {
+    const dayData = {
+      dayNumber: parseInt(match[1]),
+      title: match[2].trim(),
+      content: match[3].trim(),
+      details: {}
+    };
+    
+    // Extract specific details
+    const detailPatterns = {
+      start: /- Start: ([^\n]+)/i,
+      end: /- End: ([^\n]+)/i,
+      distance: /- Distance: ([^\n]+)/i,
+      elevation: /- Elevation gain\/loss: ([^\n]+)/i,
+      terrain: /- Terrain: ([^\n]+)/i,
+      difficulty: /- Difficulty: ([^\n]+)/i,
+      accommodation: /- Accommodation: ([^\n]+)/i,
+      waterSources: /- Water sources: ([^\n]+)/i,
+      highlights: /- Highlights: ([^\n]+)/i,
+      lunch: /- Lunch: ([^\n]+)/i,
+      tips: /- Tips: ([^\n]+)/i
+    };
+    
+    for (const [key, pattern] of Object.entries(detailPatterns)) {
+      const detailMatch = dayData.content.match(pattern);
+      if (detailMatch) {
+        dayData.details[key] = detailMatch[1].trim();
+      }
+    }
+    
+    result.structured.days.push(dayData);
+  }
+  
+  // Extract and parse packing list
+  const packingListMatch = gptResponse.match(/### Packing List([\s\S]*?)(?=###|$)/i);
+  if (packingListMatch) {
+    const packingListText = packingListMatch[1];
+    const categories = {};
+    
+    // Parse categories (e.g., *Essentials:*, *Clothing:*, etc.)
+    const categoryMatches = packingListText.matchAll(/\*([^:]+):\*\s*([\s\S]*?)(?=\*[^:]+:\*|$)/g);
+    
+    for (const match of categoryMatches) {
+      const categoryName = match[1].trim().toLowerCase().replace(/\s+/g, '-');
+      const itemsText = match[2];
+      const items = [];
+      
+      // Extract items from bullet points
+      const itemMatches = itemsText.matchAll(/- ([^\n]+)/g);
+      for (const itemMatch of itemMatches) {
+        const itemText = itemMatch[1].trim();
+        const item = {
+          name: itemText,
+          priority: 'important',
+          quantity: 1
+        };
+        
+        // Set priority based on category
+        if (categoryName === 'essentials' || categoryName === 'documentation') {
+          item.priority = 'essential';
+        } else if (categoryName === 'trek-specific-gear' || categoryName === 'safety') {
+          item.priority = 'essential';
+        } else if (categoryName === 'optional' || categoryName === 'comfort') {
+          item.priority = 'nice-to-have';
+        }
+        
+        // Check for quantity in parentheses
+        const quantityMatch = itemText.match(/\((\d+)\s*(?:items?|pairs?|sets?)?\)/i);
+        if (quantityMatch) {
+          item.quantity = parseInt(quantityMatch[1]);
+          item.name = itemText.replace(quantityMatch[0], '').trim();
+        }
+        
+        // Check for notes after dash or in brackets
+        const notesMatch = itemText.match(/[\-–](.+)$|\[(.+)\]/);
+        if (notesMatch) {
+          item.notes = notesMatch[1] || notesMatch[2];
+          item.name = itemText.replace(notesMatch[0], '').trim();
+        }
+        
+        items.push(item);
+      }
+      
+      if (items.length > 0) {
+        categories[categoryName] = items;
+      }
+    }
+    
+    result.structured.packingList = {
+      categories: categories,
+      metadata: {
+        totalItems: Object.values(categories).flat().length,
+        customizationLevel: 'AI Generated Recommendations',
+        inputDepth: { level: 'basic' }
+      }
+    };
+  }
+  
+  // Extract local insights
+  const localInsightsMatch = gptResponse.match(/### Local Insights([\s\S]*?)(?=###|$)/i);
+  if (localInsightsMatch) {
+    const insightsText = localInsightsMatch[1].trim();
+    const insights = {};
+    
+    // Parse sub-sections within local insights
+    const subSectionMatches = insightsText.matchAll(/\*([^:]+):\*\s*([\s\S]*?)(?=\*[^:]+:\*|$)/g);
+    
+    for (const match of subSectionMatches) {
+      const sectionName = match[1].trim().toLowerCase().replace(/\s+/g, '-');
+      const sectionContent = match[2].trim();
+      insights[sectionName] = sectionContent;
+    }
+    
+    result.structured.localInsights = insights;
+  }
+  
+  // Extract practical information
+  const practicalInfoMatch = gptResponse.match(/### Practical Information([\s\S]*?)(?=###|$)/i);
+  if (practicalInfoMatch) {
+    const practicalText = practicalInfoMatch[1].trim();
+    const practicalInfo = {};
+    
+    // Parse sub-sections within practical information
+    const subSectionMatches = practicalText.matchAll(/\*([^:]+):\*\s*([\s\S]*?)(?=\*[^:]+:\*|$)/g);
+    
+    for (const match of subSectionMatches) {
+      const sectionName = match[1].trim().toLowerCase().replace(/\s+/g, '-');
+      const sectionContent = match[2].trim();
+      practicalInfo[sectionName] = sectionContent;
+    }
+    
+    result.structured.practicalInfo = practicalInfo;
+  }
+  
+  return result;
+}
+
 // API endpoints
 app.post('/api/start', verifyToken, async (req, res) => {
   const { location } = req.body;
@@ -217,7 +369,7 @@ app.post('/api/start', verifyToken, async (req, res) => {
   }
 });
 
-// ✅ FIX: Add optionalAuth middleware to /api/finalize route
+// UPDATED: Enhanced /api/finalize endpoint with structured data parsing
 app.post('/api/finalize', optionalAuth, async (req, res) => {
   const userId = req.user?.userId;
   const { location, filters, comments, title } = req.body;
@@ -323,11 +475,15 @@ Please generate the full itinerary with proper formatting for each day, plus the
 
     if (!normalizedReply) return res.status(500).json({ error: 'No response from OpenAI' });
     
+    // Parse the response to extract structured data
+    const parsedResponse = parseItineraryResponse(normalizedReply);
+    
     if (userId) {
       try {
         if (mongoose.connection.readyState !== 1) {
           return res.json({ 
             reply: normalizedReply,
+            structured: parsedResponse.structured,  // Add structured data
             error: 'Database unavailable',
             message: 'Generated itinerary but database is unavailable for saving'
           });
@@ -342,6 +498,7 @@ Please generate the full itinerary with proper formatting for each day, plus the
           filters,
           comments,
           content: normalizedReply,
+          structured: parsedResponse.structured,  // Save structured data too
           createdAt: Date.now(),
           lastViewed: Date.now()
         });
@@ -350,6 +507,7 @@ Please generate the full itinerary with proper formatting for each day, plus the
         
         return res.json({ 
           reply: normalizedReply,
+          structured: parsedResponse.structured,  // Include structured data
           itineraryId: savedItinerary._id,
           message: 'Itinerary saved to database'
         });
@@ -357,6 +515,7 @@ Please generate the full itinerary with proper formatting for each day, plus the
         console.error('❌ Error saving to database:', dbError);
         return res.json({ 
           reply: normalizedReply,
+          structured: parsedResponse.structured,  // Still include structured data
           error: 'Failed to save to database',
           message: 'Generated itinerary but failed to save to database'
         });
@@ -364,6 +523,7 @@ Please generate the full itinerary with proper formatting for each day, plus the
     } else {
       return res.json({ 
         reply: normalizedReply,
+        structured: parsedResponse.structured,  // Include structured data
         isAuthenticated: false,
         message: 'Itinerary generated but not saved (user not authenticated)'
       });
